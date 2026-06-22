@@ -69,7 +69,7 @@ curl -X POST "http://localhost:5000/api/v1/detect" \
 - **图形验证码字体**：Docker 镜像已内置 `fonts-dejavu`；源码部署可把 `.ttf` 放到 `assets/fonts/` 以获得清晰验证码（见该目录 README）。
 
 ### 许可证
-MIT © pymcn
+MIT © pymcn6
 
 ---
 
