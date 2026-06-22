@@ -69,7 +69,7 @@ Only startup essentials live in `.env` (see `.env.example`): `SECRET_KEY`, optio
 - **Image CAPTCHA fonts**: the Docker image bundles `fonts-dejavu`. For source installs, drop a `.ttf` into `assets/fonts/` for crisp captchas (see that folder's README).
 
 ### License
-MIT © pymcn
+MIT © pymcn6
 
 ---
 
