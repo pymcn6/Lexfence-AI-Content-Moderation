@@ -1,2 +1,80 @@
-# Lexfence-AI-Content-Moderation
-A reliable AI content moderation service that runs on the web, provides API interfaces and extensive custom configurations. It supports multiple AI channels and automatic model rotation, delivers extremely high content moderation accuracy, and can be deployed easily for immediate use out of the box!
+<div align="center">
+
+# Lexfence
+
+**AI-powered content moderation — multi-provider, self-hosted, open source.**
+
+**English** · [中文](README_ZH.md)
+
+⭐ If this project helps you, please **[Star it on GitHub](https://github.com/pymcn6/Lexfence-AI-Content-Moderation)** — it really helps!
+
+</div>
+
+---
+
+### Features
+- **Multi-provider AI channels**: OpenAI, OpenAI-compatible, Claude, Gemini. Add multiple channels, each with its own key, models and limits.
+- **One-click model fetch** with format auto-fallback: tries the selected provider format, then falls back to other shapes (OpenAI `data:[{id}]`, AIHUBMIX `data:[{model_id}]`, Gemini `models:[{name}]`, plain arrays, etc.). Custom models endpoint supported.
+- **Per-model controls**: priority, context window, `max_tokens`, daily token limit, rate limit, thinking mode. Batch enable/disable/delete, plus one-click **enable/pause an entire channel** (toggles all its models).
+- **Priority fallback**: requests try models in priority order; on quota/rate/error it switches to the next.
+- **Custom label sets & prompts**: define your own categories per scene; submitted prompts are AI-audited for malicious intent (audit never crashes when no AI is available — it approves by default).
+- **REST API + Web console**: simple `result: true/false` or labelled responses.
+- **User registration**: admin toggle, with three verification modes — none / email (SMTP, sent asynchronously) / admin approval.
+- **Human verification (CAPTCHA)** on login & registration: built-in image CAPTCHA (anti-OCR distortion), Cloudflare Turnstile, hCaptcha, or Google reCAPTCHA.
+- **Configurable branding**: site name, browser title, homepage description, favicon and logo — all from the admin console.
+- **Update checker**: detects new GitHub releases, shows the changelog, supports a custom proxy prefix to speed up GitHub access, and gives Docker / git update instructions.
+- **Demo mode**: isolated read-only showcase at `/demomode` with its own database.
+- **i18n**: full English / 中文 interface with instant switching and auto language detection.
+- **Easy install**: first-run wizard with **database choice** — auto-detect existing DB, or manually pick SQLite (zero config) or MySQL and fill in connection details (tested before install). Docker & docker-compose ready.
+
+### Quick start (Python)
+```bash
+git clone https://github.com/pymcn6/Lexfence-AI-Content-Moderation.git
+cd Lexfence-AI-Content-Moderation
+pip install -r requirements.txt
+cp .env.example .env        # optional: edit SECRET_KEY / DATABASE_URL
+python app.py               # dev server at http://127.0.0.1:5000
+# production: gunicorn -w 4 -b 0.0.0.0:5000 --timeout 180 app:app
+```
+Open the site — the **install wizard** guides you through database choice, admin account & site setup. Then add an AI channel under **AI Channels**.
+
+### Quick start (Docker)
+```bash
+docker compose up -d                      # app only, SQLite
+docker compose --profile mysql up -d      # app + MySQL
+docker compose --profile redis up -d      # app + Redis (rate-limit store)
+```
+
+### Updating
+```bash
+# Docker: pull the latest published image
+docker compose pull && docker compose up -d
+# Source:
+git pull && pip install -r requirements.txt   # then restart the service
+```
+The admin **Updates** page checks GitHub releases, shows the changelog, and lets you set a proxy prefix (e.g. `https://ghproxy.com/`) to accelerate access from restricted networks.
+
+### API example
+```bash
+curl -X POST "http://localhost:5000/api/v1/detect" \
+  -H "X-API-Key: YOUR_KEY" -H "Content-Type: application/json" \
+  -d '{"text":"some text","scene":"message"}'
+# -> {"result": false}
+```
+
+### Configuration
+Only startup essentials live in `.env` (see `.env.example`): `SECRET_KEY`, optionally `DATABASE_URL` (or `MYSQL_*`). Everything else — AI channels, prompts, limits, branding, registration, CAPTCHA, SMTP, demo mode, update proxy — is managed in the web console and stored in the database (API keys and secrets are encrypted at rest).
+
+### Notes
+- **Image CAPTCHA fonts**: the Docker image bundles `fonts-dejavu`. For source installs, drop a `.ttf` into `assets/fonts/` for crisp captchas (see that folder's README).
+
+### License
+MIT © pymcn
+
+---
+
+<div align="center">
+
+⭐ **[Star on GitHub](https://github.com/pymcn6/Lexfence-AI-Content-Moderation)** ⭐
+
+</div>

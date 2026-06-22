@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Dashboard') }} - {{ APP_NAME }}{% endblock %}
+{% block page_title %}{{ _('Dashboard') }}{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-700">{{ _('This month') }}（{{ data.period }}）</h2>
+        <span class="text-xs text-slate-400">{{ _('Resets monthly') }}</span>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+            <p class="text-xs text-slate-400 mb-1">{{ _('Total moderated') }}</p>
+            <p class="text-2xl font-bold text-slate-800">{{ data.total }}</p>
+        </div>
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+            <p class="text-xs text-slate-400 mb-1">{{ _('Compliant') }}</p>
+            <p class="text-2xl font-bold text-emerald-600">{{ data.compliant }}</p>
+        </div>
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+            <p class="text-xs text-slate-400 mb-1">{{ _('Violation') }}</p>
+            <p class="text-2xl font-bold text-rose-600">{{ data.violation }}</p>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100">
+            <h3 class="text-sm font-semibold text-slate-700">{{ _('Category distribution') }}</h3>
+        </div>
+        <div class="p-6 space-y-3">
+            {% set labels = {'normal': _('Normal'),'porn': _('Pornography'),'political': _('Political'),'advertisement': _('Advertisement'),'spam': _('Spam'),'insult': _('Insult'),'fallback': _('Fallback (unrecognized)')} %}
+            {% for cat, cnt in data.categories.items() %}
+            <div>
+                <div class="flex items-center justify-between text-xs mb-1">
+                    <span class="text-slate-600 font-medium">{{ labels.get(cat, cat) }}</span>
+                    <span class="text-slate-400">{{ cnt }}</span>
+                </div>
+                <div class="w-full bg-slate-100 rounded-full h-2">
+                    <div class="h-2 rounded-full {% if cat in ['normal','advertisement'] %}bg-emerald-500{% else %}bg-rose-500{% endif %}"
+                         style="width: {% if data.total > 0 %}{{ (cnt / data.total * 100)|round(1) }}{% else %}0{% endif %}%"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100">
+            <h3 class="text-sm font-semibold text-slate-700">{{ _('Model usage ranking') }}</h3>
+        </div>
+        <table class="w-full text-sm text-left">
+            <thead class="bg-slate-50 text-slate-500 border-b border-slate-100">
+                <tr>
+                    <th class="px-6 py-3 font-medium text-xs">{{ _('Rank') }}</th>
+                    <th class="px-6 py-3 font-medium text-xs">{{ _('Model / Source') }}</th>
+                    <th class="px-6 py-3 font-medium text-xs">{{ _('Calls') }}</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                {% for m in data.model_rank %}
+                <tr class="hover:bg-slate-50 transition-base">
+                    <td class="px-6 py-3 text-slate-500">{{ loop.index }}</td>
+                    <td class="px-6 py-3 text-slate-700 font-medium">{{ m.name }}</td>
+                    <td class="px-6 py-3 text-brand-600 font-semibold">{{ m.count }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="3" class="px-6 py-16 text-center text-slate-400 text-sm">{{ _('No calls this month') }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

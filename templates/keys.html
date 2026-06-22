@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ _('API Keys') }} - {{ APP_NAME }}{% endblock %}
+{% block page_title %}{{ _('API Keys') }}{% endblock %}
+{% block content %}
+{% set base = request.host_url.rstrip('/') %}
+<div class="max-w-4xl space-y-6">
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+                <h2 class="text-sm font-semibold text-slate-700">{{ _('API key list') }}</h2>
+                <p class="text-xs text-slate-400 mt-0.5">{{ _('Up to 5 keys per account. The plaintext is shown only once at creation.') }}</p>
+            </div>
+            <form method="POST" action="{{ nsurl('create_key') }}" class="inline">
+                {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                <button type="submit" class="px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition-base shadow-sm">
+                    + {{ _('Generate key') }}
+                </button>
+            </form>
+        </div>
+        <div class="divide-y divide-slate-100">
+            {% for key in keys %}
+            <div class="flex items-center justify-between px-6 py-4">
+                <div>
+                    <p class="font-mono text-sm text-slate-700">{{ key.key_preview }}</p>
+                    <p class="text-xs text-slate-400 mt-1">{{ _('Created') }} {{ key.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    {% if key.active %}
+                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">{{ _('Active') }}</span>
+                    <form method="POST" action="{{ nsurl('revoke_key', key_id=key.id) }}" class="inline">
+                        {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                        <button type="submit" class="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-base">{{ _('Revoke') }}</button>
+                    </form>
+                    {% else %}
+                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">{{ _('Revoked') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <div class="text-center py-16 text-slate-400 text-sm">{{ _('No API keys yet. Click the button above to generate one.') }}</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
+        <div class="px-6 py-4 border-b border-slate-100">
+            <h2 class="text-sm font-semibold text-slate-700">{{ _('Usage examples') }}</h2>
+        </div>
+        <div class="p-6 space-y-5">
+            <div>
+                <p class="text-xs font-medium text-slate-500 mb-1.5">1. {{ _('Basic detection (all 6 categories)') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl "{{ base }}/api/v1/detect?text=hello&format=json" \
+  -H "X-API-Key: YOUR_KEY"</pre>
+                <p class="text-xs text-slate-400 mt-1.5">{{ _('Returns') }} <code class="px-1 py-0.5 rounded bg-slate-100 text-slate-600">{"result": true}</code> {{ _('= violation,') }} <code class="px-1 py-0.5 rounded bg-slate-100 text-slate-600">false</code> = {{ _('normal') }}.</p>
+            </div>
+
+            <div>
+                <p class="text-xs font-medium text-slate-500 mb-1.5">2. {{ _('Specify a scene (e.g. nickname moderation)') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl "{{ base }}/api/v1/detect?text=Tom&scene=nickname" \
+  -H "X-API-Key: YOUR_KEY"</pre>
+                <p class="text-xs text-slate-400 mt-1.5">scene: <code class="px-1 py-0.5 rounded bg-slate-100 text-slate-600">message</code> / <code class="px-1 py-0.5 rounded bg-slate-100 text-slate-600">nickname</code>.</p>
+            </div>
+
+            <div>
+                <p class="text-xs font-medium text-slate-500 mb-1.5">3. {{ _('Check only selected categories') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect" \
+  -H "X-API-Key: YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"...","categories":"porn,political,insult"}'</pre>
+                <div class="mt-2 rounded-md bg-slate-50 border border-slate-200 p-3">
+                    <p class="text-xs font-medium text-slate-500 mb-1.5">{{ _('categories options (comma separated):') }}</p>
+                    <ul class="text-xs text-slate-500 space-y-1">
+                        <li><code class="px-1 py-0.5 rounded bg-white border border-slate-200 text-slate-600">porn</code> — {{ _('pornography / sexual content') }}</li>
+                        <li><code class="px-1 py-0.5 rounded bg-white border border-slate-200 text-slate-600">political</code> — {{ _('political violations') }}</li>
+                        <li><code class="px-1 py-0.5 rounded bg-white border border-slate-200 text-slate-600">advertisement</code> — {{ _('ads / promotion') }}</li>
+                        <li><code class="px-1 py-0.5 rounded bg-white border border-slate-200 text-slate-600">spam</code> — {{ _('spam / gibberish') }}</li>
+                        <li><code class="px-1 py-0.5 rounded bg-white border border-slate-200 text-slate-600">insult</code> — {{ _('insults / hate speech') }}</li>
+                        <li><code class="px-1 py-0.5 rounded bg-white border border-slate-200 text-slate-600">normal</code> — {{ _('normal (auto-included)') }}</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div>
+                <p class="text-xs font-medium text-slate-500 mb-1.5">4. {{ _('Use a custom prompt template') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect" \
+  -H "X-API-Key: YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"...","prompt_id":12}'</pre>
+                <p class="text-xs text-slate-400 mt-1.5">{{ _('prompt_id comes from an approved template on the Custom Prompts page.') }} <code class="px-1 py-0.5 rounded bg-slate-100 text-slate-600">{"result": bool, "label": "..."}</code></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

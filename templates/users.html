@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}{{ _('User Management') }} - {{ APP_NAME }}{% endblock %}
+{% block page_title %}{{ _('User Management') }}{% endblock %}
+{% block content %}
+<div class="grid xl:grid-cols-4 gap-6">
+    <div class="xl:col-span-1">
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
+            <div class="px-5 py-4 border-b border-slate-100">
+                <h2 class="text-sm font-semibold text-slate-700">{{ _('New user') }}</h2>
+            </div>
+            <form method="POST" action="{{ nsurl('create_user') }}" class="p-5 space-y-4">
+                {{ form.hidden_tag() }}
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Username') }}</label>
+                    {{ form.username(class="w-full px-3 py-2 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-base text-sm") }}
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Initial password') }}</label>
+                    {{ form.password(class="w-full px-3 py-2 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-base text-sm") }}
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Monthly quota') }}</label>
+                    {{ form.monthly_quota(class="w-full px-3 py-2 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-base text-sm") }}
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Max chars per request') }}</label>
+                    {{ form.max_text_length(class="w-full px-3 py-2 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-base text-sm") }}
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Prompt submit quota') }}</label>
+                    {{ form.prompt_quota(class="w-full px-3 py-2 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-base text-sm") }}
+                </div>
+                <button type="submit" class="w-full py-2.5 rounded-md bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition-base shadow-sm">
+                    {{ _('Create user') }}
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="xl:col-span-3">
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100">
+                <h2 class="text-sm font-semibold text-slate-700">{{ _('User list') }}</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-slate-50 text-slate-500 border-b border-slate-100">
+                        <tr>
+                            <th class="px-4 py-3 font-medium text-xs">{{ _('Username') }}</th>
+                            <th class="px-4 py-3 font-medium text-xs">{{ _('Role') }}</th>
+                            <th class="px-4 py-3 font-medium text-xs">{{ _('Monthly quota') }}</th>
+                            <th class="px-4 py-3 font-medium text-xs">{{ _('Remaining') }}</th>
+                            <th class="px-4 py-3 font-medium text-xs">{{ _('Max chars') }}</th>
+                            <th class="px-4 py-3 font-medium text-xs">{{ _('Status') }}</th>
+                            <th class="px-4 py-3 font-medium text-xs">{{ _('Actions') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {% for user in users %}
+                        <tr class="hover:bg-slate-50 transition-base">
+                            <td class="px-4 py-3 font-medium text-slate-700">{{ user.username }}</td>
+                            <td class="px-4 py-3">
+                                {% if user.is_admin %}
+                                <span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">{{ _('Admin') }}</span>
+                                {% else %}
+                                <span class="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">{{ _('Normal user') }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3 text-slate-600">{{ user.monthly_quota }}</td>
+                            <td class="px-4 py-3 text-slate-600">{{ user.quota }}</td>
+                            <td class="px-4 py-3 text-slate-600">{{ user.max_text_length }}</td>
+                            <td class="px-4 py-3">
+                                {% if user.active %}
+                                <span class="px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">{{ _('Normal') }}</span>
+                                {% else %}
+                                <span class="px-2 py-0.5 rounded text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">{{ _('Disabled') }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3">
+                                {% if not user.is_admin %}
+                                <form method="POST" action="{{ nsurl('toggle_user', user_id=user.id) }}" class="inline">
+                                    {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                                    <button type="submit" class="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 transition-base">
+                                        {{ _('Disable') if user.active else _('Enable') }}
+                                    </button>
+                                </form>
+                                {% else %}
+                                <span class="text-xs text-slate-300">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr class="bg-slate-50/60">
+                            <td colspan="7" class="px-4 py-3 space-y-3">
+                                <form method="POST" action="{{ nsurl('update_quota', user_id=user.id) }}" class="flex flex-wrap items-center gap-3">
+                                    {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs text-slate-500">{{ _('Monthly quota') }}</span>
+                                        <input type="number" name="monthly_quota" value="{{ user.monthly_quota }}" class="w-24 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs text-slate-500">{{ _('Remaining') }}</span>
+                                        <input type="number" name="current_quota" value="{{ user.quota }}" class="w-24 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs text-slate-500">{{ _('Max chars') }}</span>
+                                        <input type="number" name="max_text_length" value="{{ user.max_text_length }}" class="w-24 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs text-slate-500">{{ _('Prompt quota') }}</span>
+                                        <input type="number" name="prompt_quota" value="{{ user.prompt_quota }}" class="w-20 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+                                    </div>
+                                    <button type="submit" class="text-xs px-3 py-1.5 rounded-md bg-brand-50 text-brand-600 border border-brand-100 hover:bg-brand-100 transition-base font-medium">{{ _('Save quota') }}</button>
+                                </form>
+                                <div class="flex flex-wrap items-center gap-3">
+                                    <form method="POST" action="{{ nsurl('rename_user', user_id=user.id) }}" class="flex items-center gap-2">
+                                        {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                                        <span class="text-xs text-slate-500">{{ _('Username') }}</span>
+                                        <input type="text" name="username" value="{{ user.username }}" maxlength="80" class="w-36 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+                                        <button type="submit" class="text-xs px-3 py-1.5 rounded-md bg-white text-slate-600 border border-slate-300 hover:bg-slate-100 transition-base font-medium">{{ _('Rename') }}</button>
+                                    </form>
+                                    <form method="POST" action="{{ nsurl('reset_user_password', user_id=user.id) }}" class="flex items-center gap-2">
+                                        {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                                        <span class="text-xs text-slate-500">{{ _('New password') }}</span>
+                                        <input type="text" name="password" placeholder="{{ _('min 6 chars') }}" minlength="6" maxlength="128" class="w-32 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+                                        <button type="submit" class="text-xs px-3 py-1.5 rounded-md bg-white text-slate-600 border border-slate-300 hover:bg-slate-100 transition-base font-medium">{{ _('Reset password') }}</button>
+                                    </form>
+                                    {% if not user.is_admin and user.id != current_user.id %}
+                                    <form method="POST" action="{{ nsurl('delete_user', user_id=user.id) }}" class="inline" onsubmit="return confirm('{{ _('Delete this user? This cannot be undone and will remove their logs and keys.') }}');">
+                                        {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                                        <button type="submit" class="text-xs px-3 py-1.5 rounded-md bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition-base font-medium">{{ _('Delete user') }}</button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

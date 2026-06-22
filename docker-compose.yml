@@ -1,0 +1,53 @@
+# Lexfence docker-compose
+# 默认仅启动 app（使用 SQLite，零外部依赖）。
+#   docker compose up -d
+# 需要 MySQL：  docker compose --profile mysql up -d
+# 需要 Redis 限流： docker compose --profile redis up -d
+
+services:
+  app:
+    # 优先使用已发布镜像（docker compose pull 即可更新）；
+    # 若需本地构建，取消下面 build 注释并注释 image 中的远程地址。
+    image: ${LEXFENCE_IMAGE:-ghcr.io/pymcn6/lexfence-ai-content-moderation:latest}
+    build: .
+    container_name: lexfence
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      # 会话密钥：留空时容器内会自动生成强随机密钥并持久化到 instance/secret_key。
+      # 多副本/水平扩展部署务必显式设置同一个固定随机串（如 openssl rand -base64 48）。
+      SECRET_KEY: ${SECRET_KEY:-}
+      # 默认 SQLite；启用 mysql profile 时取消下一行注释或用 .env 覆盖
+      # DATABASE_URL: mysql+pymysql://lexfence:lexfence@db:3306/lexfence?charset=utf8mb4
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-en}
+      # RATELIMIT_STORAGE_URI: redis://redis:6379/0
+    volumes:
+      - ./instance:/app/instance
+
+  db:
+    image: mysql:8.4
+    container_name: lexfence-mysql
+    profiles: ["mysql"]
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: lexfence
+      MYSQL_USER: lexfence
+      MYSQL_PASSWORD: lexfence
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+
+  redis:
+    image: redis:7-alpine
+    container_name: lexfence-redis
+    profiles: ["redis"]
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+volumes:
+  mysql_data:

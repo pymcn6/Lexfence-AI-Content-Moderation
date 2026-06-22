@@ -1,0 +1,355 @@
+{% extends "base.html" %}
+{% block title %}{{ _('AI Channels') }} - {{ APP_NAME }}{% endblock %}
+{% block page_title %}{{ _('AI Channels') }}{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
+        <div class="px-6 py-4 border-b border-slate-100">
+            <h2 class="text-sm font-semibold text-slate-700">{{ _('Add channel') }}</h2>
+            <p class="text-xs text-slate-400 mt-0.5">{{ _('Supports OpenAI / OpenAI-compatible / Claude / Gemini.') }}</p>
+        </div>
+        <form method="POST" action="{{ url_for('web.create_channel') }}" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Channel name') }}</label>
+                <input type="text" name="name" required maxlength="80" class="w-full px-3 py-2 rounded-md border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Provider type') }}</label>
+                <select name="provider" class="w-full px-3 py-2 rounded-md border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+                    <option value="openai">OpenAI</option>
+                    <option value="openai_compatible">OpenAI Compatible</option>
+                    <option value="claude">Claude (Anthropic)</option>
+                    <option value="gemini">Gemini (Google)</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Base URL <span class="text-slate-400">({{ _('optional, blank = default') }})</span></label>
+                <input type="text" name="base_url" placeholder="https://api.openai.com/v1" class="w-full px-3 py-2 rounded-md border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Priority') }} <span class="text-slate-400">({{ _('lower = first') }})</span></label>
+                <input type="number" name="priority" value="100" class="w-full px-3 py-2 rounded-md border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+            </div>
+            <div class="md:col-span-2">
+                <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Custom models endpoint') }} <span class="text-slate-400">({{ _('optional') }})</span></label>
+                <input type="text" name="models_endpoint" placeholder="{{ _('e.g. /models or full URL') }}" class="w-full px-3 py-2 rounded-md border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+            </div>
+            <div class="md:col-span-2">
+                <label class="block text-xs font-medium text-slate-500 mb-1">API Key</label>
+                <input type="password" name="api_key" autocomplete="new-password" class="w-full px-3 py-2 rounded-md border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+            </div>
+            <div class="md:col-span-2">
+                <button type="submit" class="px-5 py-2.5 rounded-md bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition">{{ _('Create channel') }}</button>
+            </div>
+        </form>
+    </div>
+
+    {% if channels %}
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-4">
+        <div class="relative">
+            <input type="text" id="globalSearch" oninput="searchModels(this.value)" placeholder="{{ _('Search models across all channels...') }}"
+                   class="w-full pl-9 pr-3 py-2 rounded-md border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+            <svg class="w-4 h-4 absolute left-3 top-2.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"></path></svg>
+        </div>
+        <div id="searchResults" class="hidden mt-3 max-h-80 overflow-y-auto divide-y divide-slate-100"></div>
+    </div>
+    {% endif %}
+
+    <div id="channelList" class="space-y-6">
+
+    {% for ch in channels %}
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm channel-card" data-channel="{{ ch.name }}">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
+            <div class="flex items-center gap-2 cursor-pointer" onclick="toggleCollapse('body-{{ ch.id }}', this)">
+                <svg class="w-4 h-4 text-slate-400 chevron transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                <h3 class="text-sm font-semibold text-slate-700">{{ ch.name }}</h3>
+                <span class="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">{{ ch.provider }}</span>
+                {% if ch.enabled %}<span class="px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700 border border-emerald-200">{{ _('Enabled') }}</span>
+                {% else %}<span class="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-500 border border-slate-200">{{ _('Disabled') }}</span>{% endif %}
+                <span class="text-xs text-slate-400">{{ _('Priority') }}: {{ ch.priority }} · {{ ch.models|length }} {{ _('models') }} · Key: {{ ch.masked_key() }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="button" onclick="fetchModels({{ ch.id }})" class="text-xs px-3 py-1.5 rounded-md bg-brand-50 text-brand-600 border border-brand-100 hover:bg-brand-100">{{ _('Fetch models') }}</button>
+                <form method="POST" action="{{ url_for('web.toggle_channel', channel_id=ch.id) }}" class="inline">
+                    {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                    {% if ch.enabled %}
+                    <button class="text-xs px-3 py-1.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100">{{ _('Pause channel') }}</button>
+                    {% else %}
+                    <button class="text-xs px-3 py-1.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">{{ _('Enable channel') }}</button>
+                    {% endif %}
+                </form>
+                <button type="button" onclick="toggleEdit('ch-{{ ch.id }}')" class="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100">{{ _('Edit') }}</button>
+                <form method="POST" action="{{ url_for('web.delete_channel', channel_id=ch.id) }}" class="inline" onsubmit="return confirm('{{ _('Delete this channel and all its models?') }}');">
+                    {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                    <button class="text-xs px-3 py-1.5 rounded-md bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100">{{ _('Delete') }}</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="ch-{{ ch.id }}" class="hidden px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+            <form method="POST" action="{{ url_for('web.update_channel', channel_id=ch.id) }}" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                <input type="text" name="name" value="{{ ch.name }}" class="px-3 py-2 rounded-md border border-slate-300 text-sm" placeholder="{{ _('Channel name') }}">
+                <input type="number" name="priority" value="{{ ch.priority }}" class="px-3 py-2 rounded-md border border-slate-300 text-sm" placeholder="{{ _('Priority') }}">
+                <input type="text" name="base_url" value="{{ ch.base_url or '' }}" class="px-3 py-2 rounded-md border border-slate-300 text-sm md:col-span-2" placeholder="Base URL">
+                <input type="text" name="models_endpoint" value="{{ ch.models_endpoint or '' }}" class="px-3 py-2 rounded-md border border-slate-300 text-sm md:col-span-2" placeholder="{{ _('Custom models endpoint') }}">
+                <input type="password" name="api_key" autocomplete="new-password" class="px-3 py-2 rounded-md border border-slate-300 text-sm md:col-span-2" placeholder="{{ _('New API Key (leave blank to keep)') }}">
+                <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="enabled" {% if ch.enabled %}checked{% endif %}> {{ _('Enabled') }}</label>
+                <div class="md:col-span-2"><button class="px-4 py-2 rounded-md bg-brand-600 text-white text-sm font-medium">{{ _('Save') }}</button></div>
+            </form>
+        </div>
+
+        <div id="body-{{ ch.id }}" class="p-4">
+            <form method="POST" action="{{ url_for('web.add_models', channel_id=ch.id) }}" class="flex gap-2 mb-3">
+                {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                <input type="text" name="models" id="addbox-{{ ch.id }}" placeholder="{{ _('Model names, comma separated, or use Fetch models above') }}" class="flex-1 px-3 py-2 rounded-md border border-slate-300 text-sm">
+                <button class="px-4 py-2 rounded-md bg-slate-700 text-white text-sm font-medium whitespace-nowrap">{{ _('Add models') }}</button>
+            </form>
+            <div id="fetchresult-{{ ch.id }}" class="hidden mb-3 p-3 rounded-md bg-slate-50 border border-slate-200 text-xs"></div>
+
+            {% if ch.models %}
+            <form method="POST" action="{{ url_for('web.batch_models') }}" id="batchform-{{ ch.id }}">
+                {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                <input type="hidden" name="action" value="" id="batchaction-{{ ch.id }}">
+                <div class="flex items-center justify-between flex-wrap gap-2 mb-2 text-xs">
+                    <div class="flex items-center gap-2">
+                        <label class="flex items-center gap-1 text-slate-500"><input type="checkbox" onclick="toggleAll({{ ch.id }}, this)"> {{ _('Select all') }}</label>
+                        <span class="text-slate-300">|</span>
+                        <button type="button" onclick="batchDo({{ ch.id }}, 'enable')" class="px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-100">{{ _('Enable') }}</button>
+                        <button type="button" onclick="batchDo({{ ch.id }}, 'disable')" class="px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-100">{{ _('Disable') }}</button>
+                        <button type="button" onclick="batchDo({{ ch.id }}, 'delete')" class="px-2 py-1 rounded border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100">{{ _('Delete selected') }}</button>
+                    </div>
+                    <div class="flex items-center gap-2 text-slate-500">
+                        <span>{{ _('Per page') }}:</span>
+                        <select onchange="setPageSize({{ ch.id }}, this.value)" class="px-2 py-1 rounded border border-slate-300 text-xs">
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="border border-slate-100 rounded-md divide-y divide-slate-100" id="modellist-{{ ch.id }}">
+                    {% for m in ch.models %}
+                    <div class="model-row flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50"
+                         data-cid="{{ ch.id }}" data-channel="{{ ch.name }}"
+                         data-name="{{ m.model_name }}" data-id="{{ m.id }}"
+                         data-priority="{{ m.priority }}" data-max_tokens="{{ m.max_tokens or '' }}"
+                         data-context_window="{{ m.context_window or '' }}" data-daily_token_limit="{{ m.daily_token_limit or '' }}"
+                         data-rate_limit_per_min="{{ m.rate_limit_per_min or '' }}"
+                         data-thinking="{{ '1' if m.thinking_mode else '' }}" data-enabled="{{ '1' if m.enabled else '' }}">
+                        <input type="checkbox" name="model_ids" value="{{ m.id }}" class="msel-{{ ch.id }}" onclick="event.stopPropagation()">
+                        <button type="button" onclick="openModelModal(this.closest('.model-row'))" class="flex-1 flex items-center gap-2 text-left min-w-0">
+                            <span class="font-medium text-slate-700 truncate">{{ m.model_name }}</span>
+                            <span class="text-xs {% if m.available %}text-emerald-600{% else %}text-rose-500{% endif %} whitespace-nowrap">● {{ m.last_status or _('new') }}</span>
+                            {% if not m.enabled %}<span class="text-xs text-slate-400 whitespace-nowrap">({{ _('off') }})</span>{% endif %}
+                        </button>
+                        <button type="button" onclick="openModelModal(this.closest('.model-row'))" class="text-xs px-2 py-1 rounded bg-brand-50 text-brand-600 border border-brand-100 hover:bg-brand-100 whitespace-nowrap">{{ _('Configure') }}</button>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="flex items-center justify-between mt-3 text-xs text-slate-500" id="pager-{{ ch.id }}"></div>
+            </form>
+            {% else %}
+            <p class="text-xs text-slate-400 text-center py-4">{{ _('No models yet. Fetch or add some above.') }}</p>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+
+    </div>
+
+    {% if not channels %}
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-12 text-center text-slate-400 text-sm">{{ _('No channels yet. Add your first AI channel above.') }}</div>
+    {% endif %}
+</div>
+
+<div id="modelModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onclick="if(event.target===this)closeModelModal()">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-slate-700 truncate" id="mmTitle"></h3>
+            <button type="button" onclick="closeModelModal()" class="text-slate-400 hover:text-slate-600 text-lg leading-none">&times;</button>
+        </div>
+        <form method="POST" id="mmForm" class="p-5 space-y-4">
+            {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Priority') }}</label>
+                    <input type="number" name="priority" id="mmPriority" class="w-full px-3 py-2 rounded-md border border-slate-300 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">max_tokens</label>
+                    <input type="number" name="max_tokens" id="mmMaxTokens" class="w-full px-3 py-2 rounded-md border border-slate-300 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Context window') }}</label>
+                    <input type="number" name="context_window" id="mmCtx" class="w-full px-3 py-2 rounded-md border border-slate-300 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Daily token limit') }}</label>
+                    <input type="number" name="daily_token_limit" id="mmDaily" class="w-full px-3 py-2 rounded-md border border-slate-300 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Rate/min') }}</label>
+                    <input type="number" name="rate_limit_per_min" id="mmRate" class="w-full px-3 py-2 rounded-md border border-slate-300 text-sm">
+                </div>
+            </div>
+            <div class="flex items-center gap-6">
+                <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="thinking_mode" id="mmThinking"> {{ _('Thinking') }}</label>
+                <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="enabled" id="mmEnabled"> {{ _('Enabled') }}</label>
+            </div>
+            <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+                <button type="button" id="mmDelete" class="text-xs px-3 py-1.5 rounded-md bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100">{{ _('Delete') }}</button>
+                <div class="flex gap-2">
+                    <button type="button" onclick="closeModelModal()" class="text-sm px-4 py-2 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100">{{ _('Cancel') }}</button>
+                    <button type="submit" class="text-sm px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-700 text-white font-medium">{{ _('Save') }}</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+const I18N = {
+    page: '{{ _("Page") }}', of: '{{ _("of") }}', total: '{{ _("total") }}',
+    prev: '{{ _("Prev") }}', next: '{{ _("Next") }}',
+    noResult: '{{ _("No matching models") }}', noSel: '{{ _("No models selected") }}',
+    delSel: '{{ _("Delete selected models?") }}', delOne: '{{ _("Delete this model?") }}'
+};
+const pageState = {};   // cid -> {size, page}
+
+function esc(s){ const d = document.createElement('div'); d.textContent = (s==null?'':s); return d.innerHTML; }
+
+function toggleEdit(id){ document.getElementById(id).classList.toggle('hidden'); }
+function toggleCollapse(bodyId, head){
+    const el = document.getElementById(bodyId);
+    el.classList.toggle('hidden');
+    const ch = head.querySelector('.chevron');
+    if(ch) ch.style.transform = el.classList.contains('hidden') ? '' : 'rotate(90deg)';
+}
+
+// ---------- 分页 ----------
+function rowsOf(cid){ return [...document.querySelectorAll('#modellist-'+cid+' .model-row')]; }
+function setPageSize(cid, size){ pageState[cid].size = parseInt(size); pageState[cid].page = 1; renderPage(cid); }
+function gotoPage(cid, p){ pageState[cid].page = p; renderPage(cid); }
+function renderPage(cid){
+    const st = pageState[cid];
+    const rows = rowsOf(cid);
+    const total = rows.length;
+    const pages = Math.max(1, Math.ceil(total / st.size));
+    if(st.page > pages) st.page = pages;
+    const start = (st.page - 1) * st.size, end = start + st.size;
+    rows.forEach((r, i) => { r.style.display = (i >= start && i < end) ? '' : 'none'; });
+    const pager = document.getElementById('pager-'+cid);
+    if(!pager) return;
+    let btns = '';
+    if(pages > 1){
+        btns += '<button type="button" '+(st.page<=1?'disabled':'')+' onclick="gotoPage('+cid+','+(st.page-1)+')" class="px-2 py-1 rounded border border-slate-300 disabled:opacity-40">'+I18N.prev+'</button>';
+        for(let p=1; p<=pages; p++){
+            if(p===1 || p===pages || Math.abs(p-st.page)<=2){
+                btns += '<button type="button" onclick="gotoPage('+cid+','+p+')" class="px-2 py-1 rounded border '+(p===st.page?'bg-brand-600 text-white border-brand-600':'border-slate-300')+'">'+p+'</button>';
+            } else if(Math.abs(p-st.page)===3){ btns += '<span class="px-1">…</span>'; }
+        }
+        btns += '<button type="button" '+(st.page>=pages?'disabled':'')+' onclick="gotoPage('+cid+','+(st.page+1)+')" class="px-2 py-1 rounded border border-slate-300 disabled:opacity-40">'+I18N.next+'</button>';
+    }
+    pager.innerHTML = '<span>'+total+' '+I18N.total+'</span><div class="flex items-center gap-1">'+btns+'</div>';
+}
+
+// ---------- 弹窗编辑模型 ----------
+function openModelModal(row){
+    const d = row.dataset;
+    document.getElementById('mmTitle').textContent = d.channel + ' — ' + d.name;
+    document.getElementById('mmForm').action = '/models/' + d.id + '/update';
+    document.getElementById('mmDelete').onclick = function(){
+        if(confirm(I18N.delOne)){
+            const f = document.getElementById('mmForm');
+            f.action = '/models/' + d.id + '/delete';
+            f.submit();
+        }
+    };
+    document.getElementById('mmPriority').value = d.priority || '';
+    document.getElementById('mmMaxTokens').value = d.max_tokens || '';
+    document.getElementById('mmCtx').value = d.context_window || '';
+    document.getElementById('mmDaily').value = d.daily_token_limit || '';
+    document.getElementById('mmRate').value = d.rate_limit_per_min || '';
+    document.getElementById('mmThinking').checked = d.thinking === '1';
+    document.getElementById('mmEnabled').checked = d.enabled === '1';
+    document.getElementById('modelModal').classList.remove('hidden');
+}
+function closeModelModal(){ document.getElementById('modelModal').classList.add('hidden'); }
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModelModal(); });
+
+// ---------- 全局搜索 ----------
+function searchModels(q){
+    const box = document.getElementById('searchResults');
+    q = q.trim().toLowerCase();
+    if(!q){ box.classList.add('hidden'); box.innerHTML=''; return; }
+    const hits = [...document.querySelectorAll('.model-row')].filter(r => r.dataset.name.toLowerCase().includes(q));
+    box.classList.remove('hidden');
+    if(!hits.length){ box.innerHTML = '<p class="py-3 text-center text-slate-400 text-sm">'+I18N.noResult+'</p>'; return; }
+    box.innerHTML = hits.slice(0,100).map(r => {
+        const d = r.dataset;
+        return '<div class="flex items-center justify-between gap-2 py-2 px-1">'
+            + '<span class="text-sm min-w-0 truncate"><span class="text-slate-400">'+esc(d.channel)+'</span> <span class="text-slate-300">—</span> <span class="font-medium text-slate-700">'+esc(d.name)+'</span></span>'
+            + '<button type="button" class="text-xs px-2 py-1 rounded bg-brand-50 text-brand-600 border border-brand-100 whitespace-nowrap" data-mid="'+esc(d.id)+'">'+'{{ _("Configure") }}'+'</button></div>';
+    }).join('');
+    box.querySelectorAll('button[data-mid]').forEach(btn => {
+        btn.onclick = () => {
+            const row = document.querySelector('.model-row[data-id="'+btn.dataset.mid+'"]');
+            if(row) openModelModal(row);
+        };
+    });
+}
+
+// ---------- 批量操作 ----------
+function toggleAll(cid, box){ rowsOf(cid).forEach(r => { if(r.style.display!=='none'){ const c=r.querySelector('.msel-'+cid); if(c) c.checked = box.checked; } }); }
+function batchDo(cid, action){
+    const sel = [...document.querySelectorAll('.msel-'+cid+':checked')];
+    if(!sel.length){ alert(I18N.noSel); return; }
+    if(action === 'delete' && !confirm(I18N.delSel)) return;
+    document.getElementById('batchaction-'+cid).value = action;
+    document.getElementById('batchform-'+cid).submit();
+}
+
+// ---------- 拉取模型 ----------
+function fetchModels(cid){
+    const box = document.getElementById('fetchresult-' + cid);
+    box.classList.remove('hidden');
+    box.innerHTML = '{{ _("Fetching...") }}';
+    const fd = new FormData();
+    {% if config.WTF_CSRF_ENABLED %}fd.append('csrf_token', '{{ csrf_token() }}');{% endif %}
+    fetch('/channels/' + cid + '/fetch-models', {method:'POST', body:fd})
+      .then(r => r.json()).then(d => {
+        if(!d.ok){ box.innerHTML = '<span class="text-rose-600">'+esc(d.error||'error')+'</span>'; return; }
+        const existing = new Set(d.existing||[]);
+        let html = '<div class="mb-2 flex items-center gap-2"><span class="font-medium text-slate-600">{{ _("Select models to add:") }}</span>'
+                 + '<label class="text-slate-500"><input type="checkbox" onclick="toggleFetch('+cid+', this)"> {{ _("Select all") }}</label></div><div class="flex flex-wrap gap-2">';
+        d.models.forEach(m => {
+            const dis = existing.has(m) ? 'opacity-40' : '';
+            html += '<label class="'+dis+' inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-300 bg-white cursor-pointer"><input type="checkbox" value="'+esc(m)+'" '+(existing.has(m)?'disabled':'')+' class="ff-'+cid+'"> '+esc(m)+'</label>';
+        });
+        html += '</div><button onclick="applyModels('+cid+')" class="mt-3 px-3 py-1.5 rounded bg-brand-600 text-white">{{ _("Add selected") }}</button>';
+        box.innerHTML = html;
+      }).catch(e => { box.innerHTML = '<span class="text-rose-600">'+esc(e)+'</span>'; });
+}
+function toggleFetch(cid, box){ document.querySelectorAll('.ff-'+cid).forEach(c => { if(!c.disabled) c.checked = box.checked; }); }
+function applyModels(cid){
+    const checked = [...document.querySelectorAll('.ff-'+cid+':checked')].map(c=>c.value);
+    document.getElementById('addbox-'+cid).value = checked.join(',');
+    if(checked.length) document.getElementById('addbox-'+cid).closest('form').submit();
+}
+
+// ---------- 初始化：每个渠道默认折叠 + 分页 25 ----------
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[id^="modellist-"]').forEach(list => {
+        const cid = list.id.replace('modellist-', '');
+        pageState[cid] = { size: 25, page: 1 };
+        renderPage(cid);
+    });
+    // 默认折叠所有渠道体
+    document.querySelectorAll('[id^="body-"]').forEach(b => b.classList.add('hidden'));
+});
+</script>
+{% endblock %}
+{% endblock %}

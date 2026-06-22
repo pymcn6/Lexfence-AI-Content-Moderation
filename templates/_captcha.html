@@ -1,0 +1,39 @@
+{% if captcha_enabled %}
+    {% if captcha_type == 'turnstile' %}
+    <div>
+        <div class="cf-turnstile" data-sitekey="{{ captcha_site_key }}"></div>
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    </div>
+    {% elif captcha_type == 'hcaptcha' %}
+    <div>
+        <div class="h-captcha" data-sitekey="{{ captcha_site_key }}"></div>
+        <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+    </div>
+    {% elif captcha_type == 'recaptcha' %}
+    <div>
+        <div class="g-recaptcha" data-sitekey="{{ captcha_site_key }}"></div>
+        <script src="https://www.recaptcha.net/recaptcha/api.js" async defer></script>
+    </div>
+    {% elif captcha_type == 'text' %}
+    <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1.5">{{ _('Captcha') }}</label>
+        <div class="flex items-center gap-2">
+            <span class="px-3 py-2.5 rounded-md bg-slate-100 border border-slate-200 text-sm font-mono text-slate-700 whitespace-nowrap">{{ captcha_question }}</span>
+            <input type="text" name="captcha" required autocomplete="off" maxlength="8"
+                   class="flex-1 px-3.5 py-2.5 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+        </div>
+    </div>
+    {% else %}
+    <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1.5">{{ _('Captcha') }}</label>
+        <div class="flex items-center gap-2">
+            <input type="text" name="captcha" required autocomplete="off" maxlength="8"
+                   class="flex-1 px-3.5 py-2.5 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+            {% if captcha_image %}
+            <img src="{{ captcha_image }}" alt="captcha" title="{{ _('Click to refresh') }}"
+                 onclick="location.reload()" class="h-11 rounded border border-slate-200 cursor-pointer">
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+{% endif %}

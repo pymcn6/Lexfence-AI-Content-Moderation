@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Register') }} - {{ APP_NAME }}{% endblock %}
+{% block auth_content %}
+<div class="min-h-screen flex items-center justify-center px-6 py-12 bg-slate-50">
+    <div class="w-full max-w-sm">
+        <div class="flex justify-end mb-4 text-xs">
+            <a href="/setlang/zh" class="px-1.5 text-slate-400 hover:text-slate-600">中</a>
+            <span class="text-slate-300">|</span>
+            <a href="/setlang/en" class="px-1.5 text-slate-400 hover:text-slate-600">EN</a>
+        </div>
+        <div class="mb-8">
+            <h1 class="text-2xl font-bold text-slate-800">{{ _('Create account') }}</h1>
+            <p class="text-slate-500 text-sm mt-2">{{ APP_NAME }}</p>
+        </div>
+        <form method="POST" action="{{ url_for('auth.register') }}" class="space-y-4">
+            {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">{{ _('Username') }}</label>
+                <input type="text" name="username" required maxlength="80" class="w-full px-3.5 py-2.5 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+            </div>
+            {% if verify_mode == 'email' %}
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">{{ _('Email') }}</label>
+                <input type="email" name="email" required maxlength="255" class="w-full px-3.5 py-2.5 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+            </div>
+            {% endif %}
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">{{ _('Password') }}</label>
+                <input type="password" name="password" required minlength="6" class="w-full px-3.5 py-2.5 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1.5">{{ _('Confirm password') }}</label>
+                <input type="password" name="password2" required minlength="6" class="w-full px-3.5 py-2.5 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+            </div>
+
+            {% include "_captcha.html" %}
+
+            <button type="submit" class="w-full py-2.5 rounded-md bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm transition-base shadow-sm">
+                {{ _('Register') }}
+            </button>
+        </form>
+        <p class="text-center text-xs text-slate-400 mt-6">
+            {{ _('Already have an account?') }} <a href="{{ url_for('auth.login') }}" class="text-brand-600 hover:underline">{{ _('Sign in') }}</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

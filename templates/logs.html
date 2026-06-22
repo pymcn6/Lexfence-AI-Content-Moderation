@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Detection Logs') }} - {{ APP_NAME }}{% endblock %}
+{% block page_title %}{{ _('Detection Logs') }}{% endblock %}
+{% block content %}
+<div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-700">{{ _('Detection records') }}</h2>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left">
+            <thead class="bg-slate-50 text-slate-500 border-b border-slate-100">
+                <tr>
+                    <th class="px-6 py-3 font-medium text-xs">{{ _('Time') }}</th>
+                    {% if current_user.is_admin %}<th class="px-6 py-3 font-medium text-xs">{{ _('User') }}</th>{% endif %}
+                    <th class="px-6 py-3 font-medium text-xs">{{ _('Text preview') }}</th>
+                    <th class="px-6 py-3 font-medium text-xs">{{ _('Result') }}</th>
+                    <th class="px-6 py-3 font-medium text-xs">{{ _('Category') }}</th>
+                    {% if current_user.is_admin %}<th class="px-6 py-3 font-medium text-xs">{{ _('Model') }}</th>{% endif %}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+                {% for log in logs %}
+                <tr class="hover:bg-slate-50 transition-base">
+                    <td class="px-6 py-3 text-slate-500 whitespace-nowrap">{{ log.created_at.strftime('%m-%d %H:%M') }}</td>
+                    {% if current_user.is_admin %}<td class="px-6 py-3 text-slate-500">{{ log.user_id or '-' }}</td>{% endif %}
+                    <td class="px-6 py-3 text-slate-700 max-w-xs truncate" title="{{ log.text_preview }}">{{ log.text_preview }}</td>
+                    <td class="px-6 py-3">
+                        {% if log.result == 'spam' %}
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">{{ _('Violation') }}</span>
+                        {% else %}
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">{{ _('Normal') }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-3 text-slate-600">{{ log.category }}</td>
+                    {% if current_user.is_admin %}<td class="px-6 py-3 text-slate-400 text-xs">{{ log.model or '-' }}</td>{% endif %}
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="px-6 py-16 text-center text-slate-400 text-sm">{{ _('No logs yet') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

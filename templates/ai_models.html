@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Available AI') }} - {{ APP_NAME }}{% endblock %}
+{% block page_title %}{{ _('Available AI') }}{% endblock %}
+{% block content %}
+<div class="space-y-4">
+    <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-700">{{ _('Models by call priority') }}</h2>
+        <span class="text-xs text-slate-400">{{ _('Updated') }}: {{ day or '—' }}</span>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-slate-700">{{ _('Available today') }}</h3>
+                <span class="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">{{ available_list|length }}</span>
+            </div>
+            <table class="w-full text-sm text-left">
+                <thead class="bg-slate-50 text-slate-500 border-b border-slate-100">
+                    <tr>
+                        <th class="px-4 py-2.5 font-medium text-xs">#</th>
+                        <th class="px-4 py-2.5 font-medium text-xs">{{ _('Model') }}</th>
+                        <th class="px-4 py-2.5 font-medium text-xs">{{ _('Source') }}</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for m in available_list %}
+                    <tr class="hover:bg-slate-50 transition-base">
+                        <td class="px-4 py-2.5 text-slate-400">{{ loop.index }}</td>
+                        <td class="px-4 py-2.5 text-slate-700 font-medium">{{ m.name }}</td>
+                        <td class="px-4 py-2.5">
+                            <span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">{{ m.provider }}</span>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="px-4 py-12 text-center text-slate-400 text-sm">{{ _('No available models') }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-slate-700">{{ _('All models') }}</h3>
+                <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">{{ full_list|length }}</span>
+            </div>
+            <table class="w-full text-sm text-left">
+                <thead class="bg-slate-50 text-slate-500 border-b border-slate-100">
+                    <tr>
+                        <th class="px-4 py-2.5 font-medium text-xs">#</th>
+                        <th class="px-4 py-2.5 font-medium text-xs">{{ _('Model') }}</th>
+                        <th class="px-4 py-2.5 font-medium text-xs">{{ _('Source') }}</th>
+                        <th class="px-4 py-2.5 font-medium text-xs">{{ _('Status') }}</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for m in full_list %}
+                    <tr class="hover:bg-slate-50 transition-base {% if not m.available %}opacity-60{% endif %}">
+                        <td class="px-4 py-2.5 text-slate-400">{{ m.order }}</td>
+                        <td class="px-4 py-2.5 text-slate-700 font-medium">{{ m.name }}</td>
+                        <td class="px-4 py-2.5">
+                            <span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">{{ m.provider }}</span>
+                        </td>
+                        <td class="px-4 py-2.5">
+                            {% if m.available %}
+                            <span class="text-xs text-emerald-600 font-medium">● {{ _(m.reason) }}</span>
+                            {% else %}
+                            <span class="text-xs text-rose-500 font-medium">● {{ _(m.reason) }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="px-4 py-12 text-center text-slate-400 text-sm">{{ _('No models') }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

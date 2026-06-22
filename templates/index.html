@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Text Detection') }} - {{ APP_NAME }}{% endblock %}
+{% block page_title %}{{ _('Text Detection') }}{% endblock %}
+{% block content %}
+<div class="max-w-4xl space-y-6">
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
+        <div class="px-6 py-4 border-b border-slate-100">
+            <h2 class="text-sm font-semibold text-slate-700">{{ _('Content Detection') }}</h2>
+        </div>
+        <form id="detectForm" method="POST" action="{{ nsurl('web_detect') }}" class="p-6 space-y-4">
+            {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1.5">{{ _('Detection template') }}</label>
+                <select name="mode" class="w-full px-3 py-2 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-base text-sm">
+                    {% set sm = selected_mode or 'full' %}
+                    <option value="full" {% if sm == 'full' %}selected{% endif %}>{{ _('Default (all 6 categories)') }}</option>
+                    <option value="scene:message" {% if sm == 'scene:message' %}selected{% endif %}>{{ _('Message moderation (full)') }}</option>
+                    <option value="scene:nickname" {% if sm == 'scene:nickname' %}selected{% endif %}>{{ _('Nickname moderation (skip gibberish)') }}</option>
+                    {% if user_prompts %}
+                    <optgroup label="{{ _('My custom templates') }}">
+                        {% for p in user_prompts %}
+                        <option value="prompt:{{ p.id }}" {% if sm == 'prompt:' ~ p.id %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                </select>
+            </div>
+            <textarea name="text" id="detectText" rows="6" maxlength="{{ current_user.max_text_length }}" placeholder="{{ _('Enter text to moderate...') }}"
+                class="w-full px-4 py-3 rounded-md bg-slate-50 border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-base resize-none text-sm">{{ text or '' }}</textarea>
+            <div class="flex items-center justify-between">
+                <span class="text-xs text-slate-400">{{ _('Max') }} {{ current_user.max_text_length }} · {{ _('Quota') }}: <span id="quotaVal">{{ current_user.quota }}</span></span>
+                <button type="submit" id="detectBtn" class="px-6 py-2.5 rounded-md bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm transition-base shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
+                    <span id="detectBtnText">{{ _('Start detection') }}</span>
+                    <svg id="detectSpinner" class="hidden inline w-4 h-4 ml-1 animate-spin align-text-bottom" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path></svg>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <div id="evaluating" class="hidden bg-white rounded-lg border border-slate-200 shadow-sm p-6">
+        <div class="flex items-center gap-3 text-slate-600">
+            <svg class="w-5 h-5 animate-spin text-brand-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path></svg>
+            <div>
+                <p class="text-sm font-medium">{{ _('Evaluating, waiting for the model...') }}</p>
+                <p class="text-xs text-slate-400 mt-0.5">{{ _('This may take a while for thinking models. Please keep this page open.') }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="detectError" class="hidden bg-rose-50 border border-rose-200 rounded-lg p-4 text-sm text-rose-700"></div>
+
+    <div id="resultCard" class="{% if not result %}hidden {% endif %}bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-700">{{ _('Detection result') }}</h2>
+            <span id="rcBadge">
+            {% if result and result.is_spam %}
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>{{ _('Violation') }}
+            </span>
+            {% elif result %}
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>{{ _('Normal content') }}
+            </span>
+            {% endif %}
+            </span>
+        </div>
+        <div class="grid grid-cols-3 divide-x divide-slate-100">
+            <div class="p-5">
+                <p class="text-xs text-slate-400 mb-1">{{ _('Category') }}</p>
+                <p class="text-sm font-semibold text-slate-700" id="rcCategory">{{ result.category if result else '' }}</p>
+            </div>
+            <div class="p-5">
+                <p class="text-xs text-slate-400 mb-1">{{ _('Detection source') }}</p>
+                <p class="text-sm font-semibold text-slate-700" id="rcSource">{{ result.source if result else '' }}</p>
+            </div>
+            <div class="p-5">
+                <p class="text-xs text-slate-400 mb-1">{{ _('Allowed?') }}</p>
+                <p class="text-sm font-semibold {% if result and result.allowed %}text-emerald-600{% elif result %}text-rose-600{% endif %}" id="rcAllowed">{% if result %}{{ _('Allow') if result.allowed else _('Block') }}{% endif %}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+const DI18N = {
+    btn: '{{ _("Start detection") }}',
+    violation: '{{ _("Violation") }}', normal: '{{ _("Normal content") }}',
+    allow: '{{ _("Allow") }}', block: '{{ _("Block") }}',
+    netErr: '{{ _("Request failed, please retry") }}'
+};
+(function(){
+    const form = document.getElementById('detectForm');
+    if(!form) return;
+    const btn = document.getElementById('detectBtn');
+    const spin = document.getElementById('detectSpinner');
+    const evaluating = document.getElementById('evaluating');
+    const errBox = document.getElementById('detectError');
+    const card = document.getElementById('resultCard');
+
+    form.addEventListener('submit', function(e){
+        e.preventDefault();
+        const text = document.getElementById('detectText').value.trim();
+        errBox.classList.add('hidden');
+        if(!text){ return; }
+        // 进入评估状态：按钮禁用、显示等待、隐藏旧结果
+        btn.disabled = true;
+        spin.classList.remove('hidden');
+        evaluating.classList.remove('hidden');
+        card.classList.add('hidden');
+
+        fetch(form.action, {
+            method: 'POST',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            body: new FormData(form)
+        })
+        .then(r => r.json())
+        .then(d => {
+            evaluating.classList.add('hidden');
+            btn.disabled = false; spin.classList.add('hidden');
+            if(!d.ok){
+                errBox.textContent = d.error || DI18N.netErr;
+                errBox.classList.remove('hidden');
+                return;
+            }
+            renderResult(d.result);
+        })
+        .catch(() => {
+            evaluating.classList.add('hidden');
+            btn.disabled = false; spin.classList.add('hidden');
+            errBox.textContent = DI18N.netErr;
+            errBox.classList.remove('hidden');
+        });
+    });
+
+    function esc(s){ const d = document.createElement('div'); d.textContent = (s==null?'':s); return d.innerHTML; }
+    function renderResult(res){
+        const badge = document.getElementById('rcBadge');
+        if(res.is_spam){
+            badge.innerHTML = '<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>'+DI18N.violation+'</span>';
+        } else {
+            badge.innerHTML = '<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>'+DI18N.normal+'</span>';
+        }
+        document.getElementById('rcCategory').textContent = esc(res.category);
+        document.getElementById('rcSource').textContent = esc(res.source);
+        const allowed = document.getElementById('rcAllowed');
+        allowed.textContent = res.allowed ? DI18N.allow : DI18N.block;
+        allowed.className = 'text-sm font-semibold ' + (res.allowed ? 'text-emerald-600' : 'text-rose-600');
+        card.classList.remove('hidden');
+        const q = document.getElementById('quotaVal');
+        if(q){ const n = parseInt(q.textContent); if(!isNaN(n) && n>0) q.textContent = n-1; }
+    }
+})();
+</script>
+{% endblock %}
+{% endblock %}
