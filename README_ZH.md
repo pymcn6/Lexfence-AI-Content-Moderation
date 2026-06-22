@@ -39,11 +39,78 @@ python app.py               # 开发服务器 http://127.0.0.1:5000
 打开网站，**安装向导**会引导你选择数据库、创建管理员与站点信息；随后在「AI 渠道」中添加渠道。
 
 ### 快速开始（Docker）
+
+**方式 A —— 一行 `docker run`（SQLite，零外部依赖）：**
 ```bash
-docker compose up -d                      # 仅 app，SQLite
+docker run -d --name lexfence -p 5000:5000 \
+  -e SECRET_KEY=换成你自己的长随机字符串 \
+  -v lexfence_data:/app/instance \
+  ghcr.io/pymcn6/lexfence-ai-content-moderation:latest
+```
+- `-p 5000:5000`：把容器端口映射到宿主机。
+- `SECRET_KEY`：设为你自己的长随机串（留空则自动生成并持久化到 `/app/instance`）。
+- `-v lexfence_data:/app/instance`：持久化 SQLite 数据库、密钥与安装锁，容器删除重建后数据不丢。
+
+**方式 B —— Docker Compose（推荐）：**
+```bash
+docker compose up -d                      # 仅 app，SQLite（零依赖）
 docker compose --profile mysql up -d      # app + MySQL
 docker compose --profile redis up -d      # app + Redis（限流存储）
 ```
+
+仓库自带的 `docker-compose.yml` 定义了三个服务（`app` 常驻；`db`、`redis` 通过 profile 按需启用）：
+
+```yaml
+services:
+  app:
+    # 优先使用已发布镜像（docker compose pull 即可更新）；
+    # 若需本地构建，保留 build: . 并注释掉 image 那行。
+    image: ${LEXFENCE_IMAGE:-ghcr.io/pymcn6/lexfence-ai-content-moderation:latest}
+    build: .
+    container_name: lexfence
+    restart: unless-stopped
+    ports:
+      - "5000:5000"                        # 宿主:容器，访问 http://localhost:5000
+    environment:
+      # 会话密钥：留空时容器内会自动生成强随机密钥并持久化到 instance/secret_key。
+      # 多副本/水平扩展部署务必显式设置同一个固定随机串（如 openssl rand -base64 48）。
+      SECRET_KEY: ${SECRET_KEY:-}
+      # 默认 SQLite；要用 MySQL 时取消下一行注释（或用 .env 覆盖）：
+      # DATABASE_URL: mysql+pymysql://lexfence:lexfence@db:3306/lexfence?charset=utf8mb4
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-en}  # 默认界面语言：en / zh
+      # RATELIMIT_STORAGE_URI: redis://redis:6379/0   # 启用 redis profile 时打开
+    volumes:
+      - ./instance:/app/instance           # 持久化 SQLite 数据库、密钥、安装锁
+
+  db:                                       # MySQL —— 仅 `--profile mysql` 时启动
+    image: mysql:8.4
+    container_name: lexfence-mysql
+    profiles: ["mysql"]
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: lexfence
+      MYSQL_USER: lexfence
+      MYSQL_PASSWORD: lexfence              # 生产环境请修改
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql           # 持久化 MySQL 数据
+    ports:
+      - "3306:3306"                         # 生产环境建议去掉此映射（仅容器内访问）
+
+  redis:                                    # Redis 限流存储 —— 仅 `--profile redis` 时启动
+    image: redis:7-alpine
+    container_name: lexfence-redis
+    profiles: ["redis"]
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+volumes:
+  mysql_data:
+```
+
+提示：在 `docker-compose.yml` 同目录放一个 `.env` 文件，写上 `SECRET_KEY=...`（用 MySQL 再加 `MYSQL_ROOT_PASSWORD=...`），Compose 会自动加载。启动后打开 **http://localhost:5000** 进入安装向导。
 
 ### 更新
 ```bash
@@ -69,7 +136,7 @@ curl -X POST "http://localhost:5000/api/v1/detect" \
 - **图形验证码字体**：Docker 镜像已内置 `fonts-dejavu`；源码部署可把 `.ttf` 放到 `assets/fonts/` 以获得清晰验证码（见该目录 README）。
 
 ### 许可证
-MIT © pymcn6
+MIT © pymcn
 
 ---
 
