@@ -12,8 +12,6 @@
 
 💛 **Like it? [Sponsor the project](sponsor.md)** — your support keeps it going.
 
-<img src="assets/img/wx_donate.png" alt="WeChat Sponsor" width="200">
-
 </div>
 
 ---
