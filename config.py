@@ -138,13 +138,16 @@ GITHUB_URL = "https://github.com/pymcn6/Lexfence-AI-Content-Moderation"
 # GitHub 仓库（owner/repo），用于检测更新
 GITHUB_REPO = "pymcn6/Lexfence-AI-Content-Moderation"
 # 当前版本号（发布新版本时同步更新，并打同名 git tag，如 v1.2.0）
-APP_VERSION = os.environ.get("APP_VERSION", "1.0.0")
+APP_VERSION = os.environ.get("APP_VERSION", "2.4.0")
 # Docker 镜像名（用于"拉取最新镜像更新"提示）
 DOCKER_IMAGE = os.environ.get("DOCKER_IMAGE", "ghcr.io/pymcn6/lexfence-ai-content-moderation:latest")
 
 # AI 检测全局默认（每渠道/模型可单独覆盖；留空用这些默认）
 LLM_DEFAULT_MAX_TOKENS = int(os.environ.get("LLM_DEFAULT_MAX_TOKENS", "2048"))
 LLM_FAIL_OPEN = _env_bool("LLM_FAIL_OPEN", False)
+
+# 额度（Tokens）：新用户/迁移后默认 token 额度
+DEFAULT_TOKEN_QUOTA = int(os.environ.get("DEFAULT_TOKEN_QUOTA", "10000"))
 
 
 class Config:

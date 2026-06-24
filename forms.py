@@ -2,7 +2,7 @@
 """WTForms 表单定义（自带 CSRF 保护）。"""
 
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, IntegerField, SubmitField, TextAreaField, BooleanField, SelectField
+from wtforms import StringField, PasswordField, IntegerField, SubmitField, TextAreaField, BooleanField, SelectField, FloatField
 from wtforms.validators import DataRequired, Length, EqualTo, NumberRange, Optional
 
 
@@ -72,6 +72,20 @@ class SettingsForm(FlaskForm):
         validators=[DataRequired(), NumberRange(min=16, max=32768)],
     )
     log_keep_per_user = IntegerField("Logs kept per user", validators=[DataRequired(), NumberRange(min=10, max=5000)])
+    token_reserve_text = IntegerField("Token reserve per text detection", validators=[DataRequired(), NumberRange(min=1, max=1000000)])
+    token_reserve_image = IntegerField("Token reserve per image detection", validators=[DataRequired(), NumberRange(min=1, max=1000000)])
+    token_reserve_video = IntegerField("Token reserve per video detection", validators=[DataRequired(), NumberRange(min=1, max=1000000)])
+    bill_keep_days = IntegerField("Bill retention days (older detection records are deleted)", validators=[DataRequired(), NumberRange(min=1, max=365)])
+    homepage_iframe_url = StringField("Homepage iframe URL (public; leave empty to redirect to login)", validators=[Optional(), Length(max=500)])
+    recharge_iframe_url = StringField("Online recharge iframe URL (public)", validators=[Optional(), Length(max=500)])
+    pricing_enabled = BooleanField("Show pricing page")
+    pricing_text_per_m = FloatField("Text price per 1M tokens (base currency)", validators=[Optional(), NumberRange(min=0, max=1000000)])
+    pricing_image_per_m = FloatField("Image price per 1M tokens (base currency)", validators=[Optional(), NumberRange(min=0, max=1000000)])
+    pricing_video_per_m = FloatField("Video price per 1M tokens (base currency)", validators=[Optional(), NumberRange(min=0, max=1000000)])
+    pricing_currencies = TextAreaField("Currencies (one per line: code,symbol,rate; first line is the base currency)", validators=[Optional(), Length(max=2000)])
+    pricing_note = TextAreaField("Pricing note (optional)", validators=[Optional(), Length(max=1000)])
+    default_max_api_keys = IntegerField("Default max API keys per user", validators=[Optional(), NumberRange(min=0, max=1000)])
+    contact_info = StringField("Site contact (shown when a user needs more, e.g. email / phone)", validators=[Optional(), Length(max=200)])
     demo_enabled = BooleanField("Enable demo mode (/demomode read-only demo without login)")
     submit = SubmitField("Save settings")
 

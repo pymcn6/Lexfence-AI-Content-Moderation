@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="{{ get_locale() }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ _('Recharge') }} - {{ SITE.title or APP_NAME }}</title>
+    {% if SITE.favicon %}<link rel="icon" href="{{ SITE.favicon }}">{% endif %}
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>body{margin:0}.fade-in{animation:fade .4s ease}@keyframes fade{from{opacity:0}to{opacity:1}}</style>
+</head>
+<body class="bg-slate-50">
+    <header class="bg-white border-b border-slate-200">
+        <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+            <a href="{{ url_for('web.homepage') }}" class="flex items-center gap-2 font-semibold text-slate-800">
+                {% if SITE.logo %}<img src="{{ SITE.logo }}" class="h-7" alt="">{% endif %}
+                <span>{{ SITE.name or APP_NAME }}</span>
+            </a>
+            <nav class="flex items-center gap-2 text-sm">
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('web.index') }}" class="px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition">{{ _('Console') }}</a>
+                {% else %}
+                <a href="{{ url_for('auth.login') }}" class="px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition">{{ _('Sign in') }}</a>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+    <main class="fade-in">
+        {% if iframe_url %}
+        <iframe src="{{ iframe_url }}" class="w-full" style="height:calc(100vh - 56px);border:0" referrerpolicy="no-referrer"></iframe>
+        {% else %}
+        <div class="max-w-2xl mx-auto px-4 py-24 text-center">
+            <h1 class="text-2xl font-bold text-slate-800 mb-3">{{ _('Online recharge') }}</h1>
+            <p class="text-slate-500">{{ _('Recharge is not configured yet. Please contact the administrator.') }}</p>
+            {% if SITE.contact %}<p class="text-slate-400 text-sm mt-2">{{ _('Contact') }}: {{ SITE.contact }}</p>{% endif %}
+        </div>
+        {% endif %}
+    </main>
+</body>
+</html>

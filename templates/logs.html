@@ -12,6 +12,7 @@
                 <tr>
                     <th class="px-6 py-3 font-medium text-xs">{{ _('Time') }}</th>
                     {% if current_user.is_admin %}<th class="px-6 py-3 font-medium text-xs">{{ _('User') }}</th>{% endif %}
+                    <th class="px-6 py-3 font-medium text-xs">{{ _('Type') }}</th>
                     <th class="px-6 py-3 font-medium text-xs">{{ _('Text preview') }}</th>
                     <th class="px-6 py-3 font-medium text-xs">{{ _('Result') }}</th>
                     <th class="px-6 py-3 font-medium text-xs">{{ _('Category') }}</th>
@@ -23,6 +24,7 @@
                 <tr class="hover:bg-slate-50 transition-base">
                     <td class="px-6 py-3 text-slate-500 whitespace-nowrap">{{ log.created_at.strftime('%m-%d %H:%M') }}</td>
                     {% if current_user.is_admin %}<td class="px-6 py-3 text-slate-500">{{ log.user_id or '-' }}</td>{% endif %}
+                    <td class="px-6 py-3"><span class="px-1.5 py-0.5 rounded text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-100">{{ _(log.media_type or 'text') }}</span></td>
                     <td class="px-6 py-3 text-slate-700 max-w-xs truncate" title="{{ log.text_preview }}">{{ log.text_preview }}</td>
                     <td class="px-6 py-3">
                         {% if log.result == 'spam' %}

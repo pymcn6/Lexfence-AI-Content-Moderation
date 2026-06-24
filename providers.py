@@ -49,6 +49,29 @@ def is_safe_public_url(url: str) -> bool:
     return True
 
 
+def infer_modalities(model_name: str) -> list:
+    """从模型名启发式推断支持的模态（仅作"获取模型"时的默认建议，用户可改）。
+
+    多数渠道的模型列表接口不返回能力信息，这里按常见命名规律猜测：
+    - 含 vision/vl/-v/4o/gemini/claude-3/pixtral/llava 等 → 含 image
+    - gemini 系列对视频有原生支持 → 含 video
+    无法判断时仅返回 ['text']。
+    """
+    n = (model_name or "").lower()
+    mods = ["text"]
+    image_kw = ("vision", "-vl", "vl-", "llava", "pixtral", "4o", "4.1",
+                "gemini", "claude-3", "claude-4", "qwen-vl", "qwen2-vl",
+                "qwen2.5-vl", "internvl", "minicpm-v", "-v-", "omni")
+    video_kw = ("gemini-1.5", "gemini-2", "gemini-exp", "qwen2.5-vl", "qwen-vl-max")
+    if any(k in n for k in image_kw):
+        mods.append("image")
+    if any(k in n for k in video_kw):
+        if "image" not in mods:
+            mods.append("image")
+        mods.append("video")
+    return mods
+
+
 # ---------- 默认 base_url ----------
 DEFAULT_BASE_URLS = {
     "openai": "https://api.openai.com/v1",
@@ -188,20 +211,28 @@ def _parse_models(body) -> List[str]:
 def chat(provider: str, base_url: str, api_key: str, model: str,
          system_prompt: str, user_text: str,
          max_tokens: int, thinking_mode: bool = False,
-         timeout: int = DEFAULT_TIMEOUT) -> Dict:
-    """返回 {status, text, usage_tokens}。status: ok|blocked|rate|quota|error。"""
+         timeout: int = DEFAULT_TIMEOUT,
+         image_urls=None, video_url: str = "") -> Dict:
+    """返回 {status, text, usage_tokens}。status: ok|blocked|rate|quota|error。
+
+    多模态：
+    - image_urls: 图片 URL 列表（http/https），交给模型的视觉输入。
+    - video_url:  视频 URL（仅 Gemini 等原生支持视频的渠道有效）。
+    纯文本检测时这两个参数留空，行为与原来完全一致。
+    """
     provider = (provider or "openai").lower()
     base = normalize_base_url(provider, base_url)
+    image_urls = [u for u in (image_urls or []) if u]
     try:
         if provider in ("openai", "openai_compatible"):
             return _chat_openai(base, api_key, model, system_prompt, user_text,
-                                max_tokens, thinking_mode, timeout)
+                                max_tokens, thinking_mode, timeout, image_urls)
         if provider == "claude":
             return _chat_claude(base, api_key, model, system_prompt, user_text,
-                                max_tokens, timeout)
+                                max_tokens, timeout, image_urls)
         if provider == "gemini":
             return _chat_gemini(base, api_key, model, system_prompt, user_text,
-                                max_tokens, timeout)
+                                max_tokens, timeout, image_urls, video_url)
         return {"status": "error", "text": "", "usage_tokens": 0}
     except requests.exceptions.HTTPError as e:
         return _classify_http_error(e)
@@ -227,11 +258,20 @@ def _classify_http_error(e) -> Dict:
     return {"status": "error", "text": "", "usage_tokens": 0}
 
 
-def _chat_openai(base, api_key, model, sys_p, text, max_tokens, thinking, timeout) -> Dict:
+def _chat_openai(base, api_key, model, sys_p, text, max_tokens, thinking, timeout,
+                 image_urls=None) -> Dict:
+    image_urls = image_urls or []
+    if image_urls:
+        # 视觉输入：content 用数组（OpenAI / 兼容服务的多模态格式）
+        content = [{"type": "text", "text": text}]
+        for u in image_urls:
+            content.append({"type": "image_url", "image_url": {"url": u}})
+        user_msg = {"role": "user", "content": content}
+    else:
+        user_msg = {"role": "user", "content": text}
     payload = {
         "model": model,
-        "messages": [{"role": "system", "content": sys_p},
-                     {"role": "user", "content": text}],
+        "messages": [{"role": "system", "content": sys_p}, user_msg],
         "temperature": 0.0,
         "max_tokens": max_tokens,
     }
@@ -251,11 +291,21 @@ def _chat_openai(base, api_key, model, sys_p, text, max_tokens, thinking, timeou
     return {"status": "ok", "text": content.strip(), "usage_tokens": usage}
 
 
-def _chat_claude(base, api_key, model, sys_p, text, max_tokens, timeout) -> Dict:
+def _chat_claude(base, api_key, model, sys_p, text, max_tokens, timeout,
+                 image_urls=None) -> Dict:
+    image_urls = image_urls or []
+    if image_urls:
+        content = [{"type": "text", "text": text}]
+        for u in image_urls:
+            content.append({"type": "image",
+                            "source": {"type": "url", "url": u}})
+        messages = [{"role": "user", "content": content}]
+    else:
+        messages = [{"role": "user", "content": text}]
     payload = {
         "model": model,
         "system": sys_p,
-        "messages": [{"role": "user", "content": text}],
+        "messages": messages,
         "max_tokens": max_tokens,
         "temperature": 0.0,
     }
@@ -273,10 +323,33 @@ def _chat_claude(base, api_key, model, sys_p, text, max_tokens, timeout) -> Dict
     return {"status": "ok", "text": content.strip(), "usage_tokens": total}
 
 
-def _chat_gemini(base, api_key, model, sys_p, text, max_tokens, timeout) -> Dict:
+def _guess_mime(url: str, default: str) -> str:
+    """根据 URL 扩展名粗略推断 MIME 类型。"""
+    low = (url or "").split("?")[0].lower()
+    table = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+        ".webp": "image/webp", ".gif": "image/gif", ".bmp": "image/bmp",
+        ".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm",
+        ".mkv": "video/x-matroska", ".avi": "video/x-msvideo",
+    }
+    for ext, mime in table.items():
+        if low.endswith(ext):
+            return mime
+    return default
+
+
+def _chat_gemini(base, api_key, model, sys_p, text, max_tokens, timeout,
+                 image_urls=None, video_url="") -> Dict:
+    image_urls = image_urls or []
+    parts = [{"text": text}]
+    for u in image_urls:
+        parts.append({"fileData": {"mimeType": _guess_mime(u, "image/jpeg"), "fileUri": u}})
+    if video_url:
+        parts.append({"fileData": {"mimeType": _guess_mime(video_url, "video/mp4"),
+                                    "fileUri": video_url}})
     payload = {
         "systemInstruction": {"parts": [{"text": sys_p}]},
-        "contents": [{"role": "user", "parts": [{"text": text}]}],
+        "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {"temperature": 0.0, "maxOutputTokens": max_tokens},
     }
     r = requests.post(f"{base}/models/{model}:generateContent",

@@ -67,7 +67,7 @@
                 <span class="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">{{ ch.provider }}</span>
                 {% if ch.enabled %}<span class="px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700 border border-emerald-200">{{ _('Enabled') }}</span>
                 {% else %}<span class="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-500 border border-slate-200">{{ _('Disabled') }}</span>{% endif %}
-                <span class="text-xs text-slate-400">{{ _('Priority') }}: {{ ch.priority }} · {{ ch.models|length }} {{ _('models') }} · Key: {{ ch.masked_key() }}</span>
+                <span class="text-xs text-slate-400">{{ _('Priority') }}: {{ ch.priority }} · {{ ch.models|length }} {{ _('models') }} · Key: <span class="font-mono break-all">{{ ch.get_api_key() or '—' }}</span></span>
             </div>
             <div class="flex items-center gap-2">
                 <button type="button" onclick="fetchModels({{ ch.id }})" class="text-xs px-3 py-1.5 rounded-md bg-brand-50 text-brand-600 border border-brand-100 hover:bg-brand-100">{{ _('Fetch models') }}</button>
@@ -126,6 +126,8 @@
                             <option value="25">25</option>
                             <option value="50">50</option>
                             <option value="100">100</option>
+                            <option value="300">300</option>
+                            <option value="all">ALL</option>
                         </select>
                     </div>
                 </div>
@@ -137,10 +139,14 @@
                          data-priority="{{ m.priority }}" data-max_tokens="{{ m.max_tokens or '' }}"
                          data-context_window="{{ m.context_window or '' }}" data-daily_token_limit="{{ m.daily_token_limit or '' }}"
                          data-rate_limit_per_min="{{ m.rate_limit_per_min or '' }}"
-                         data-thinking="{{ '1' if m.thinking_mode else '' }}" data-enabled="{{ '1' if m.enabled else '' }}">
+                         data-thinking="{{ '1' if m.thinking_mode else '' }}" data-enabled="{{ '1' if m.enabled else '' }}"
+                         data-modalities="{{ m.modality_list()|join(',') }}">
                         <input type="checkbox" name="model_ids" value="{{ m.id }}" class="msel-{{ ch.id }}" onclick="event.stopPropagation()">
                         <button type="button" onclick="openModelModal(this.closest('.model-row'))" class="flex-1 flex items-center gap-2 text-left min-w-0">
                             <span class="font-medium text-slate-700 truncate">{{ m.model_name }}</span>
+                            {% for mod in m.modality_list() %}
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100 whitespace-nowrap">{{ _(mod) }}</span>
+                            {% endfor %}
                             <span class="text-xs {% if m.available %}text-emerald-600{% else %}text-rose-500{% endif %} whitespace-nowrap">● {{ m.last_status or _('new') }}</span>
                             {% if not m.enabled %}<span class="text-xs text-slate-400 whitespace-nowrap">({{ _('off') }})</span>{% endif %}
                         </button>
@@ -198,6 +204,16 @@
                 <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="thinking_mode" id="mmThinking"> {{ _('Thinking') }}</label>
                 <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="enabled" id="mmEnabled"> {{ _('Enabled') }}</label>
             </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1.5">{{ _('Supported input types') }}</label>
+                <div class="flex items-center gap-4">
+                    <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="modality" value="text" id="mmModText" checked disabled> {{ _('text') }}</label>
+                    <input type="hidden" name="modality" value="text">
+                    <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="modality" value="image" id="mmModImage"> {{ _('image') }}</label>
+                    <label class="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" name="modality" value="video" id="mmModVideo"> {{ _('video') }}</label>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-1">{{ _('Text is always supported. Enable image/video only if the model truly supports that input.') }}</p>
+            </div>
             <div class="flex items-center justify-between pt-2 border-t border-slate-100">
                 <button type="button" id="mmDelete" class="text-xs px-3 py-1.5 rounded-md bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100">{{ _('Delete') }}</button>
                 <div class="flex gap-2">
@@ -231,15 +247,16 @@ function toggleCollapse(bodyId, head){
 
 // ---------- 分页 ----------
 function rowsOf(cid){ return [...document.querySelectorAll('#modellist-'+cid+' .model-row')]; }
-function setPageSize(cid, size){ pageState[cid].size = parseInt(size); pageState[cid].page = 1; renderPage(cid); }
+function setPageSize(cid, size){ pageState[cid].size = (size === 'all' ? 'all' : parseInt(size)); pageState[cid].page = 1; renderPage(cid); }
 function gotoPage(cid, p){ pageState[cid].page = p; renderPage(cid); }
 function renderPage(cid){
     const st = pageState[cid];
     const rows = rowsOf(cid);
     const total = rows.length;
-    const pages = Math.max(1, Math.ceil(total / st.size));
+    const size = (st.size === 'all') ? (total || 1) : st.size;
+    const pages = Math.max(1, Math.ceil(total / size));
     if(st.page > pages) st.page = pages;
-    const start = (st.page - 1) * st.size, end = start + st.size;
+    const start = (st.page - 1) * size, end = start + size;
     rows.forEach((r, i) => { r.style.display = (i >= start && i < end) ? '' : 'none'; });
     const pager = document.getElementById('pager-'+cid);
     if(!pager) return;
@@ -275,6 +292,9 @@ function openModelModal(row){
     document.getElementById('mmRate').value = d.rate_limit_per_min || '';
     document.getElementById('mmThinking').checked = d.thinking === '1';
     document.getElementById('mmEnabled').checked = d.enabled === '1';
+    const mods = (d.modalities || 'text').split(',');
+    document.getElementById('mmModImage').checked = mods.indexOf('image') !== -1;
+    document.getElementById('mmModVideo').checked = mods.indexOf('video') !== -1;
     document.getElementById('modelModal').classList.remove('hidden');
 }
 function closeModelModal(){ document.getElementById('modelModal').classList.add('hidden'); }

@@ -25,6 +25,7 @@ def index():
 
     if request.method == "POST":
         site_name = (request.form.get("site_name") or config.APP_NAME).strip()
+        site_base_url = (request.form.get("site_base_url") or "").strip().rstrip("/")
         admin_user = (request.form.get("admin_username") or "").strip()
         admin_pwd = request.form.get("admin_password") or ""
         admin_pwd2 = request.form.get("admin_password2") or ""
@@ -90,7 +91,8 @@ def index():
                 db.session.add(admin)
 
             import settings_store
-            settings_store.save_settings({"site_name": site_name, "site_title": site_name})
+            settings_store.save_settings({"site_name": site_name, "site_title": site_name,
+                                          "site_base_url": site_base_url})
             db.session.commit()
         except Exception as exc:
             db.session.rollback()

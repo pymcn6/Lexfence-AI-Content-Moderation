@@ -8,24 +8,24 @@
 
 ⭐ 如果这个项目对你有帮助，欢迎 **[在 GitHub 点个 Star](https://github.com/pymcn6/Lexfence-AI-Content-Moderation)** 支持一下！
 
+**[🚀 在线体验](https://textsafe.pym.plus/demomode)** — 免注册，即点即用。
+
 </div>
 
 ---
 
 ### 功能
-- **多 AI 渠道**：支持 OpenAI、OpenAI 兼容、Claude、Gemini，可添加多个渠道，各自独立密钥、模型与限额。
-- **一键拉取模型 + 格式自动回退**：先按所选渠道格式尝试，失败自动回退其它结构（OpenAI `data:[{id}]`、AIHUBMIX `data:[{model_id}]`、Gemini `models:[{name}]`、纯数组等），并支持自定义模型获取接口。
-- **每模型精细控制**：优先级、上下文长度、`max_tokens`、每日 token 限额、速率限制、思考模式；支持**批量启用/禁用/删除**，以及一键**启用/暂停整条渠道**（同步开关其下全部模型）。
-- **优先级回退**：按优先级依次尝试模型，遇额度/限速/错误自动切换下一个。
-- **自定义标签集与提示词**：按场景定义自己的分类；提交的提示词经 AI 审核恶意意图（无可用 AI 时不会报错，默认放行）。
-- **REST API + 网页后台**：返回简单的 `result: true/false` 或带标签结果。
-- **用户注册**：后台开关，三种验证方式——无验证 / 邮箱验证（SMTP，后台线程异步发信）/ 管理员审核。
-- **登录与注册人机验证**：内置图形验证码（抗 OCR 扭曲）、Cloudflare Turnstile、hCaptcha、Google reCAPTCHA。
-- **可配置品牌**：站点名称、浏览器标题、首页介绍、Favicon、Logo，全部在后台管理。
-- **更新检测**：检测 GitHub 新版本、显示更新日志、支持自定义代理前缀加速 GitHub，并给出 Docker / git 更新指引。
-- **体验模式**：`/demomode` 提供独立数据库的只读演示。
-- **国际化**：完整中 / 英界面，即时切换，自动识别浏览器语言。
-- **安装简单**：首次安装向导支持**数据库选择**——自动检测已有库，或手动选 SQLite（零配置）/ MySQL 并填写连接信息（安装前测试连通）。提供 Docker / docker-compose。
+- **多模态审核**：文本、图片、视频三种内容一站式审核。
+- **多 AI 渠道**：接入并管理 OpenAI、Claude、Gemini 及兼容服务。
+- **自定义提示词与分类**：按场景定义自己的提示词模板与标签。
+- **REST API**：支持同步与异步两种调用方式（异步避免长任务超时）。
+- **商业化就绪**：公开落地首页、内置**定价页**（按后台配置展示每百万 Tokens 的文本/图片/视频单价，支持多货币与自定义汇率换算）、可内嵌的**充值页**（用 iframe 接入你自己的发卡网/支付页），并支持兑换码充值。
+- **API 密钥管控**：每个密钥可设用量限制（每分钟/时/天/月/年最多多少 Tokens）、请求速率、有效期，并展示每个密钥的用量统计；用户级密钥配额，达上限时显示后台配置的联系方式。
+- **按 Token 计费**：用量按 Token 计量，按实际消耗结算。
+- **后台管理**：用户管理、配额管理、检测日志与数据看板。
+- **体验模式**：在线 Demo，免部署即可试用。
+- **国际化**：完整中 / 英界面。
+- **部署简单**：Docker / docker-compose 一键部署。
 
 ### 快速开始（Python）
 ```bash
@@ -112,28 +112,15 @@ volumes:
 
 提示：在 `docker-compose.yml` 同目录放一个 `.env` 文件，写上 `SECRET_KEY=...`（用 MySQL 再加 `MYSQL_ROOT_PASSWORD=...`），Compose 会自动加载。启动后打开 **http://localhost:5000** 进入安装向导。
 
-### 更新
-```bash
-# Docker：拉取最新发布镜像
-docker compose pull && docker compose up -d
-# 源码：
-git pull && pip install -r requirements.txt   # 然后重启服务
-```
-后台「系统更新」页会检测 GitHub 发布、显示更新日志，并可设置代理前缀（如 `https://ghproxy.com/`）以在受限网络下加速访问。
+### 发布版本（网页端，v2.4.0）
+1. 本地提交改动并推送分支。
+2. 打 tag 并推送：`git tag v2.4.0 && git push origin v2.4.0`。
+3. 在 GitHub 打开 **Releases → Draft a new release**，选择 tag `v2.4.0`，填写说明后 **Publish**。仓库内置的 GitHub Actions 工作流会自动构建并推送 Docker 镜像到 GHCR。
 
-### API 示例
-```bash
-curl -X POST "http://localhost:5000/api/v1/detect" \
-  -H "X-API-Key: YOUR_KEY" -H "Content-Type: application/json" \
-  -d '{"text":"some text","scene":"message"}'
-# -> {"result": false}
-```
+**切勿上传以下文件**（`.gitignore` 已默认忽略）：`.env`、整个 `instance/` 目录（SQLite 数据库、`secret_key`、安装锁）、任何 `*.db` / `*.sqlite3` 文件，以及 `__pycache__/`。只提交 `.env.example`（仅占位符）。
 
-### 配置说明
-`.env` 只放启动必需项（见 `.env.example`）：`SECRET_KEY`、可选 `DATABASE_URL`（或 `MYSQL_*`）。其余配置（AI 渠道、提示词、限额、品牌、注册、验证码、SMTP、体验模式、更新代理）都在网页后台管理并存数据库（API 密钥与密钥项加密存储）。
-
-### 说明
-- **图形验证码字体**：Docker 镜像已内置 `fonts-dejavu`；源码部署可把 `.ttf` 放到 `assets/fonts/` 以获得清晰验证码（见该目录 README）。
+### 赞助
+如果这个项目对你有帮助，欢迎[赞助支持](https://github.com/pymcn6/Lexfence-AI-Content-Moderation/blob/main/sponsor.md)。
 
 ### 许可证
 MIT © pymcn

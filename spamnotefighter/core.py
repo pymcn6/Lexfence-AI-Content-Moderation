@@ -37,14 +37,35 @@ class SpamNoteFighter:
         # 仅使用 AI 模型，不加载本地 Transformer
         self.gpt = gpt_classifier
 
-    def detect(self, text: str, labels=None, extra_prompt: str = "") -> Dict:
+    def detect(self, text: str, labels=None, extra_prompt: str = "",
+               media_type: str = "text", image_urls=None, video_url: str = "") -> Dict:
         """
-        检测单条文本。
+        检测单条文本或媒体。
 
         labels: 自定义标签集 [{"label","definition","blocked"}]；为空用内置 6 类。
         extra_prompt: 追加引导语。
+        media_type: text / image / video。
+        image_urls: 图片 URL 列表（media_type=image 时）。
+        video_url: 视频 URL（media_type=video 时）。
         返回：is_spam / category / confidence / allowed / source / details
         """
+        media_type = media_type if media_type in ("text", "image", "video") else "text"
+        image_urls = [u for u in (image_urls or []) if u]
+
+        # 媒体检测：跳过文本前置过滤，直接走 AI（媒体内容无法用乱码规则判断）
+        if media_type in ("image", "video"):
+            if self.gpt is None:
+                default = labels[0]["label"] if labels else "normal"
+                return self._result(default, 0.0, "none", {}, allowed=True)
+            r = self.gpt.classify(text or "", labels=labels, extra_prompt=extra_prompt,
+                                   media_type=media_type, image_urls=image_urls,
+                                   video_url=video_url)
+            details = {"blocked": r.get("blocked", False), "model": r.get("model"),
+                       "usage_tokens": r.get("usage_tokens", 0)}
+            conf = 0.99 if r.get("source") == "filter" else 0.9
+            allowed = not r.get("blocked", False)
+            return self._result(r["label"], conf, r.get("source", "model"), details, allowed=allowed)
+
         if not text or not text.strip():
             default = labels[0]["label"] if labels else "normal"
             return self._result(default, 1.0, "rule", {"reason": "empty_text"}, allowed=True)
@@ -60,7 +81,8 @@ class SpamNoteFighter:
         # AI 模型检测（intern 优先，免费模型回退）
         if self.gpt is not None:
             r = self.gpt.classify(text, labels=labels, extra_prompt=extra_prompt)
-            details = {"blocked": r.get("blocked", False), "model": r.get("model")}
+            details = {"blocked": r.get("blocked", False), "model": r.get("model"),
+                       "usage_tokens": r.get("usage_tokens", 0)}
             conf = 0.99 if r.get("source") == "filter" else 0.9
             allowed = not r.get("blocked", False)
             return self._result(r["label"], conf, r.get("source", "model"), details, allowed=allowed)
@@ -80,6 +102,7 @@ class SpamNoteFighter:
             "allowed": allowed,
             "source": source,
             "details": details,
+            "usage_tokens": int((details or {}).get("usage_tokens", 0) or 0),
         }
 
     def is_fitted(self) -> bool:

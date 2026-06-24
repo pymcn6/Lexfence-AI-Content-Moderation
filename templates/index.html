@@ -1,34 +1,55 @@
 {% extends "base.html" %}
-{% block title %}{{ _('Text Detection') }} - {{ APP_NAME }}{% endblock %}
-{% block page_title %}{{ _('Text Detection') }}{% endblock %}
+{% block title %}{{ _('Content Detection') }} - {{ APP_NAME }}{% endblock %}
+{% block page_title %}{{ _('Content Detection') }}{% endblock %}
 {% block content %}
 <div class="max-w-4xl space-y-6">
     <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
-        <div class="px-6 py-4 border-b border-slate-100">
-            <h2 class="text-sm font-semibold text-slate-700">{{ _('Content Detection') }}</h2>
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
+            <button type="button" data-tab="text" class="detTab px-3 py-1.5 rounded-md text-sm font-medium bg-brand-600 text-white">{{ _('Text') }}</button>
+            <button type="button" data-tab="image" class="detTab px-3 py-1.5 rounded-md text-sm font-medium text-slate-500 hover:bg-slate-100">{{ _('Image') }}</button>
+            <button type="button" data-tab="video" class="detTab px-3 py-1.5 rounded-md text-sm font-medium text-slate-500 hover:bg-slate-100">{{ _('Video') }}</button>
         </div>
         <form id="detectForm" method="POST" action="{{ nsurl('web_detect') }}" class="p-6 space-y-4">
             {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+            <input type="hidden" name="media_type" id="mediaType" value="text">
             <div>
                 <label class="block text-xs font-medium text-slate-500 mb-1.5">{{ _('Detection template') }}</label>
-                <select name="mode" class="w-full px-3 py-2 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-base text-sm">
+                <select name="mode" id="detectMode" class="w-full px-3 py-2 rounded-md bg-white border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-base text-sm">
                     {% set sm = selected_mode or 'full' %}
-                    <option value="full" {% if sm == 'full' %}selected{% endif %}>{{ _('Default (all 6 categories)') }}</option>
-                    <option value="scene:message" {% if sm == 'scene:message' %}selected{% endif %}>{{ _('Message moderation (full)') }}</option>
-                    <option value="scene:nickname" {% if sm == 'scene:nickname' %}selected{% endif %}>{{ _('Nickname moderation (skip gibberish)') }}</option>
+                    <optgroup label="{{ _('Text') }}" class="modeGroup" data-for="text">
+                        <option value="full" data-mt="text" {% if sm == 'full' %}selected{% endif %}>{{ _('Default (all 6 categories)') }}</option>
+                        <option value="scene:message" data-mt="text" {% if sm == 'scene:message' %}selected{% endif %}>{{ _('Message moderation (full)') }}</option>
+                        <option value="scene:nickname" data-mt="text" {% if sm == 'scene:nickname' %}selected{% endif %}>{{ _('Nickname moderation (skip gibberish)') }}</option>
+                    </optgroup>
+                    <optgroup label="{{ _('Image') }}" class="modeGroup" data-for="image">
+                        <option value="image" data-mt="image" {% if sm == 'image' %}selected{% endif %}>{{ _('Default image moderation') }}</option>
+                    </optgroup>
+                    <optgroup label="{{ _('Video') }}" class="modeGroup" data-for="video">
+                        <option value="video" data-mt="video" {% if sm == 'video' %}selected{% endif %}>{{ _('Default video moderation') }}</option>
+                    </optgroup>
                     {% if user_prompts %}
                     <optgroup label="{{ _('My custom templates') }}">
                         {% for p in user_prompts %}
-                        <option value="prompt:{{ p.id }}" {% if sm == 'prompt:' ~ p.id %}selected{% endif %}>{{ p.name }}</option>
+                        <option value="prompt:{{ p.id }}" data-mt="text" {% if sm == 'prompt:' ~ p.id %}selected{% endif %}>{{ p.name }}</option>
                         {% endfor %}
                     </optgroup>
                     {% endif %}
                 </select>
             </div>
-            <textarea name="text" id="detectText" rows="6" maxlength="{{ current_user.max_text_length }}" placeholder="{{ _('Enter text to moderate...') }}"
-                class="w-full px-4 py-3 rounded-md bg-slate-50 border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-base resize-none text-sm">{{ text or '' }}</textarea>
+
+            <div id="paneText" class="detPane">
+                <textarea name="text" id="detectText" rows="6" maxlength="{{ current_user.max_text_length }}" placeholder="{{ _('Enter text to moderate...') }}"
+                    class="w-full px-4 py-3 rounded-md bg-slate-50 border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-base resize-none text-sm">{{ text or '' }}</textarea>
+            </div>
+            <div id="paneMedia" class="detPane hidden">
+                <input type="url" name="media_url" id="detectUrl" placeholder="{{ _('Paste an image/video URL (https://...)') }}"
+                    class="w-full px-4 py-3 rounded-md bg-slate-50 border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-base text-sm">
+                <p class="text-xs text-slate-400 mt-1.5">{{ _('Only public URLs are supported. The server sends the URL to a multimodal model; it does not download the file.') }}</p>
+                <img id="mediaPreview" class="hidden mt-3 max-h-48 rounded-md border border-slate-200" alt="">
+            </div>
+
             <div class="flex items-center justify-between">
-                <span class="text-xs text-slate-400">{{ _('Max') }} {{ current_user.max_text_length }} · {{ _('Quota') }}: <span id="quotaVal">{{ current_user.quota }}</span></span>
+                <span class="text-xs text-slate-400">{{ _('Tokens') }}: <span id="quotaVal">{% if current_user.unlimited_quota %}{{ _('Unlimited') }}{% else %}{{ current_user.quota }}{% endif %}</span><span id="costHint"></span></span>
                 <button type="submit" id="detectBtn" class="px-6 py-2.5 rounded-md bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm transition-base shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
                     <span id="detectBtnText">{{ _('Start detection') }}</span>
                     <svg id="detectSpinner" class="hidden inline w-4 h-4 ml-1 animate-spin align-text-bottom" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path></svg>
@@ -87,7 +108,8 @@ const DI18N = {
     btn: '{{ _("Start detection") }}',
     violation: '{{ _("Violation") }}', normal: '{{ _("Normal content") }}',
     allow: '{{ _("Allow") }}', block: '{{ _("Block") }}',
-    netErr: '{{ _("Request failed, please retry") }}'
+    netErr: '{{ _("Request failed, please retry") }}',
+    usedText: '{{ _("Used {n} tokens") }}'
 };
 (function(){
     const form = document.getElementById('detectForm');
@@ -97,13 +119,65 @@ const DI18N = {
     const evaluating = document.getElementById('evaluating');
     const errBox = document.getElementById('detectError');
     const card = document.getElementById('resultCard');
+    const mtField = document.getElementById('mediaType');
+    const modeSel = document.getElementById('detectMode');
+    const paneText = document.getElementById('paneText');
+    const paneMedia = document.getElementById('paneMedia');
+    const urlInput = document.getElementById('detectUrl');
+    const preview = document.getElementById('mediaPreview');
+    const costHint = document.getElementById('costHint');
+    let currentTab = 'text';
+
+
+    function applyTab(tab){
+        currentTab = tab;
+        mtField.value = tab;
+        // tab 按钮高亮
+        document.querySelectorAll('.detTab').forEach(b => {
+            const on = b.dataset.tab === tab;
+            b.classList.toggle('bg-brand-600', on);
+            b.classList.toggle('text-white', on);
+            b.classList.toggle('text-slate-500', !on);
+        });
+        // 切换输入区
+        const isText = tab === 'text';
+        paneText.classList.toggle('hidden', !isText);
+        paneMedia.classList.toggle('hidden', isText);
+        // 同步模板下拉到该模态的首个选项
+        const opt = modeSel.querySelector('option[data-mt="'+tab+'"]');
+        if(opt) modeSel.value = opt.value;
+        if(isText){ preview.classList.add('hidden'); }
+        else { urlInput.placeholder = tab === 'image'
+            ? '{{ _("Paste an image URL (https://...)") }}'
+            : '{{ _("Paste a video URL (https://...)") }}'; }
+    }
+
+    document.querySelectorAll('.detTab').forEach(b => {
+        b.addEventListener('click', () => applyTab(b.dataset.tab));
+    });
+
+    // 模板下拉变化时，同步 media_type（自定义模板按文本处理）
+    modeSel.addEventListener('change', function(){
+        const opt = modeSel.options[modeSel.selectedIndex];
+        const mt = (opt && opt.dataset.mt) || 'text';
+        if(mt !== currentTab){ applyTab(mt); modeSel.value = opt.value; }
+    });
+
+    // 图片 URL 预览
+    urlInput.addEventListener('input', function(){
+        const v = urlInput.value.trim();
+        if(currentTab === 'image' && v){ preview.src = v; preview.classList.remove('hidden'); }
+        else { preview.classList.add('hidden'); }
+    });
 
     form.addEventListener('submit', function(e){
         e.preventDefault();
-        const text = document.getElementById('detectText').value.trim();
         errBox.classList.add('hidden');
-        if(!text){ return; }
-        // 进入评估状态：按钮禁用、显示等待、隐藏旧结果
+        if(currentTab === 'text'){
+            if(!document.getElementById('detectText').value.trim()) return;
+        } else {
+            if(!urlInput.value.trim()) return;
+        }
         btn.disabled = true;
         spin.classList.remove('hidden');
         evaluating.classList.remove('hidden');
@@ -123,7 +197,7 @@ const DI18N = {
                 errBox.classList.remove('hidden');
                 return;
             }
-            renderResult(d.result);
+            renderResult(d.result, d.used_tokens, d.quota);
         })
         .catch(() => {
             evaluating.classList.add('hidden');
@@ -134,7 +208,7 @@ const DI18N = {
     });
 
     function esc(s){ const d = document.createElement('div'); d.textContent = (s==null?'':s); return d.innerHTML; }
-    function renderResult(res){
+    function renderResult(res, usedTokens, quota){
         const badge = document.getElementById('rcBadge');
         if(res.is_spam){
             badge.innerHTML = '<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>'+DI18N.violation+'</span>';
@@ -147,9 +221,17 @@ const DI18N = {
         allowed.textContent = res.allowed ? DI18N.allow : DI18N.block;
         allowed.className = 'text-sm font-semibold ' + (res.allowed ? 'text-emerald-600' : 'text-rose-600');
         card.classList.remove('hidden');
+        // 更新配额显示（服务端按实际 token 结算后返回；无限用户 quota 为 null）
         const q = document.getElementById('quotaVal');
-        if(q){ const n = parseInt(q.textContent); if(!isNaN(n) && n>0) q.textContent = n-1; }
+        if(q && quota !== undefined){ q.textContent = (quota === null ? q.textContent : quota); }
+        if(typeof usedTokens === 'number'){ costHint.textContent = ' · ' + DI18N.usedText.replace('{n}', usedTokens); }
     }
+
+    // 初始：依据已选模板确定初始 tab
+    (function initTab(){
+        const opt = modeSel.options[modeSel.selectedIndex];
+        applyTab((opt && opt.dataset.mt) || 'text');
+    })();
 })();
 </script>
 {% endblock %}

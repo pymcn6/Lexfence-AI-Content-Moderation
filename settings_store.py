@@ -61,11 +61,30 @@ DEFAULTS = {
     "fail_open": "0",              # 全部失败时：0=判违规，1=放行
     "fallback_allow": "0",         # AI 有响应但分类无法识别时归入 fallback：0=拦截，1=放行
     "default_max_tokens": "2048",  # 默认单次最大输出 token（模型可单独覆盖）
+    # 各模态检测的 token 预扣估值（检测前预扣，AI 返回后按实际用量退差）
+    "token_reserve_text": "1000",
+    "token_reserve_image": "2000",
+    "token_reserve_video": "8000",
     "log_keep_per_user": "150",    # 每用户日志保留条数
+    "bill_keep_days": "15",        # 账单（检测日志）保留天数，超出由定时任务清理
+    "homepage_iframe_url": "",     # 首页内嵌 iframe 地址（公开访问；留空则首页跳转到登录）
+    "recharge_iframe_url": "",     # 在线充值页内嵌 iframe 地址（公开访问）
+    # 定价（商业化）：每百万 Tokens 单价（以基准货币计），多货币按倍率换算
+    "pricing_enabled": "1",        # 是否展示定价页
+    "pricing_text_per_m": "2",     # 文本检测：每百万 Tokens 单价（基准货币）
+    "pricing_image_per_m": "10",   # 图片检测：每百万 Tokens 单价（基准货币）
+    "pricing_video_per_m": "50",   # 视频检测：每百万 Tokens 单价（基准货币）
+    # 货币表：每行 `代码,符号,倍率`，第一行为基准货币（倍率应为 1）
+    "pricing_currencies": "USD,$,1\nCNY,¥,7.2",
+    "pricing_note": "",            # 定价页补充说明（可选）
+    # API Key 与联系方式
+    "default_max_api_keys": "5",   # 普通用户默认最多可创建的 API Key 数
+    "contact_info": "",            # 全站联系方式（邮箱/手机号等），用于"如需更多请联系"提示
     "demo_enabled": "0",           # 体验模式开关：1=开启 /demomode，0=关闭
     # 站点品牌与展示
     "site_name": "Lexfence",       # 站点名称
     "site_title": "Lexfence",      # 浏览器标题 / 顶部标题
+    "site_base_url": "",           # 站点实际访问地址（用于 API 文档示例等；留空回退到请求地址）
     "site_description": "",        # 首页/登录页介绍文案
     "site_favicon": "",            # 网站图标 URL（留空用内置）
     "site_logo": "",               # 侧边栏/登录页 Logo URL（留空用内置）
@@ -115,6 +134,46 @@ SCENES = {
     "nickname": _builtin_labels(["normal", "porn", "political", "advertisement", "insult"]),
 }
 
+# 媒体（图片/视频）内置分类集与定义。图片/视频最可能需要判定的违规维度：
+# 色情、政治敏感、暴力血腥、违禁品、广告，正常作为兜底类别。
+MEDIA_LABEL_DEFS = {
+    "normal": ("Normal, safe image/video content with no violation.", False),
+    "porn": ("Pornographic, sexually explicit or suggestive imagery.", True),
+    "political": ("Politically sensitive violating imagery (reactionary symbols, "
+                  "prohibited flags/leaders, incitement). Neutral/positive content is normal.", True),
+    "violence": ("Violence, gore, bloody, terrorist or extremely disturbing imagery.", True),
+    "prohibited": ("Prohibited items: weapons, drugs, gambling and similar illegal goods.", True),
+    "advertisement": ("Advertising / promotional imagery (logos, QR codes, contact info).", False),
+}
+
+MEDIA_CATEGORIES = ["normal", "porn", "political", "violence", "prohibited", "advertisement"]
+
+
+def _media_labels(keys=None):
+    keys = keys or MEDIA_CATEGORIES
+    return [{"label": k, "definition": MEDIA_LABEL_DEFS[k][0], "blocked": MEDIA_LABEL_DEFS[k][1]}
+            for k in keys if k in MEDIA_LABEL_DEFS]
+
+
+# 媒体场景默认标签集（图片与视频共用同一套违规维度）
+MEDIA_SCENES = {
+    "image": _media_labels(),
+    "video": _media_labels(),
+}
+
+# 各模态默认 token 预扣配置键
+_TOKEN_RESERVE_KEYS = {"text": "token_reserve_text", "image": "token_reserve_image", "video": "token_reserve_video"}
+
+
+def token_reserve(media_type: str) -> int:
+    """返回某模态检测前预扣的 token 估值（后台可配，至少 1）。
+
+    检测前先按此值预扣，AI 返回后用实际 usage_tokens 退差/补扣。
+    """
+    key = _TOKEN_RESERVE_KEYS.get((media_type or "text"), "token_reserve_text")
+    return max(1, get_int(key, 1000))
+
+
 _cache = {}
 _cache_ts = 0.0
 _cache_ttl = 10.0          # 秒；后台保存后会立即失效
@@ -155,11 +214,78 @@ def get_bool(key: str) -> bool:
     return str(get_setting(key, "0")).lower() in ("1", "true", "yes", "on")
 
 
+def site_base_url(fallback: str = "") -> str:
+    """站点实际访问地址：优先后台配置 site_base_url，否则回退到请求地址。
+
+    返回不带结尾斜杠的形式，供 API 文档示例等拼接使用。
+    """
+    configured = (get_setting("site_base_url", "") or "").strip()
+    base = configured or (fallback or "")
+    return base.rstrip("/")
+
+
 def get_int(key: str, fallback: int) -> int:
     try:
         return int(float(get_setting(key, fallback)))
     except (TypeError, ValueError):
         return fallback
+
+
+def _parse_currencies(raw: str):
+    """解析货币表文本：每行 `代码,符号,倍率`。
+
+    返回列表 [{code, symbol, rate}]；非法行跳过；倍率非正数则跳过。
+    第一条作为基准货币。解析失败时回退到 USD。
+    """
+    out = []
+    for line in (raw or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 3:
+            continue
+        code, symbol, rate_s = parts[0], parts[1], parts[2]
+        if not code:
+            continue
+        try:
+            rate = float(rate_s)
+        except (TypeError, ValueError):
+            continue
+        if rate <= 0:
+            continue
+        out.append({"code": code[:10], "symbol": (symbol or code)[:8], "rate": rate})
+    if not out:
+        out = [{"code": "USD", "symbol": "$", "rate": 1.0}]
+    return out
+
+
+def get_pricing() -> dict:
+    """商业化定价信息：基准货币的每百万 Tokens 单价 + 多货币换算表。
+
+    供定价页渲染。所有金额按 `每百万 Tokens 单价 × 货币倍率` 计算。
+    """
+    def _f(key, default):
+        try:
+            v = float(get_setting(key, default))
+            return v if v >= 0 else 0.0
+        except (TypeError, ValueError):
+            return float(default)
+
+    currencies = _parse_currencies(get_setting("pricing_currencies", ""))
+    base = currencies[0]
+    plans = [
+        {"key": "text", "per_m": _f("pricing_text_per_m", 0)},
+        {"key": "image", "per_m": _f("pricing_image_per_m", 0)},
+        {"key": "video", "per_m": _f("pricing_video_per_m", 0)},
+    ]
+    return {
+        "enabled": get_bool("pricing_enabled"),
+        "base_currency": base,
+        "currencies": currencies,
+        "plans": plans,
+        "note": (get_setting("pricing_note", "") or "").strip(),
+    }
 
 
 def get_all() -> dict:
@@ -210,21 +336,38 @@ def _incr_counter(period: str, kind: str, name: str, amount: int = 1):
         db.session.add(StatCounter(period=period, kind=kind, name=name, count=amount))
 
 
-def record_detection(user_id, text: str, result: dict):
-    """记录一次检测：写日志 + 累加月度统计 + 裁剪该用户日志。"""
+def _detail_summary(text: str, media_type: str) -> str:
+    """账单详情摘要：文本保留近 100 字；图片/视频 URL 或 base64 保留前 50 位。"""
+    s = (text or "")
+    if media_type in ("image", "video"):
+        return s[:50]
+    return s[:100]
+
+
+def record_detection(user_id, text: str, result: dict, media_type: str = "text", tokens: int = 0):
+    """记录一次检测：写日志 + 累加月度统计 + 裁剪该用户日志。
+
+    media_type: text / image / video。图片/视频时 text 传 URL 或文件名摘要。
+    tokens: 本次检测实际消耗的 Tokens（账单展示用）。
+    """
     period = current_period()
     category = (result.get("category", "normal") or "normal")[:64]
     model = ((result.get("details") or {}).get("model") or result.get("source") or "unknown")[:64]
+    mtype = media_type if media_type in ("text", "image", "video") else "text"
+    used = max(0, int(tokens or result.get("usage_tokens", 0) or 0))
 
     try:
         # 1) 写检测日志
         log = DetectionLog(
             user_id=user_id,
             text_preview=text[:200],
+            media_type=mtype,
             result="spam" if result.get("is_spam") else "normal",
             category=category,
             confidence=result.get("confidence", 0.0),
             model=model,
+            tokens=used,
+            detail=_detail_summary(text, mtype),
         )
         db.session.add(log)
 
@@ -234,39 +377,55 @@ def record_detection(user_id, text: str, result: dict):
         verdict = "compliant" if result.get("allowed") else "violation"
         _incr_counter(period, "verdict", verdict)
 
+        # 累加用户累计请求数（不受账单清理影响）
+        if user_id is not None:
+            from models import User
+            from sqlalchemy import update as _update
+            db.session.execute(
+                _update(User).where(User.id == user_id)
+                .values(requests_total=User.requests_total + 1)
+            )
+
         db.session.commit()
     except Exception:
         db.session.rollback()
         return
 
-    # 3) 裁剪该用户日志，仅保留最近 N 条
+    # 3) 裁剪：按账单保留天数清理（默认 15 天），并兜底限制单用户条数
     try:
         if user_id is not None:
-            keep = get_int("log_keep_per_user", 150)
-            _trim_user_logs(user_id, keep)
+            _trim_user_logs_by_days(user_id, get_int("bill_keep_days", 15))
     except Exception:
         db.session.rollback()
 
 
-def _trim_user_logs(user_id: int, keep: int):
-    """删除该用户超出 keep 条的旧日志。"""
-    total = DetectionLog.query.filter_by(user_id=user_id).count()
-    if total <= keep:
+def _trim_user_logs_by_days(user_id: int, days: int):
+    """删除该用户超过 N 天的检测日志（账单仅保留最近 N 天）。"""
+    from datetime import datetime, timedelta
+    if days <= 0:
         return
-    # 找出第 keep 条的时间界限，删除更早的
-    threshold = (
-        DetectionLog.query.filter_by(user_id=user_id)
-        .order_by(DetectionLog.id.desc())
-        .offset(keep - 1)
-        .limit(1)
-        .first()
-    )
-    if threshold:
-        DetectionLog.query.filter(
-            DetectionLog.user_id == user_id,
-            DetectionLog.id < threshold.id,
-        ).delete(synchronize_session=False)
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    DetectionLog.query.filter(
+        DetectionLog.user_id == user_id,
+        DetectionLog.created_at < cutoff,
+    ).delete(synchronize_session=False)
+    db.session.commit()
+
+
+def purge_old_logs(days: int = None):
+    """全库清理超过 N 天的检测日志（供定时任务调用）。返回删除条数。"""
+    from datetime import datetime, timedelta
+    days = days if days is not None else get_int("bill_keep_days", 15)
+    if days <= 0:
+        return 0
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    try:
+        n = DetectionLog.query.filter(DetectionLog.created_at < cutoff).delete(synchronize_session=False)
         db.session.commit()
+        return n or 0
+    except Exception:
+        db.session.rollback()
+        return 0
 
 
 def get_dashboard(period: str = None) -> dict:
@@ -306,3 +465,58 @@ def get_dashboard(period: str = None) -> dict:
         "categories": cat_counts,
         "model_rank": model_rank,
     }
+
+
+def get_user_token_stats(user) -> dict:
+    """用户数据看板：总用量、剩余、今日已用 Tokens、总请求数、今日请求数。"""
+    from datetime import datetime
+    now = datetime.utcnow()
+    today_start = datetime(now.year, now.month, now.day)
+    today_used = (
+        db.session.query(db.func.coalesce(db.func.sum(DetectionLog.tokens), 0))
+        .filter(DetectionLog.user_id == user.id, DetectionLog.created_at >= today_start)
+        .scalar()
+    ) or 0
+    today_requests = (
+        db.session.query(db.func.count(DetectionLog.id))
+        .filter(DetectionLog.user_id == user.id, DetectionLog.created_at >= today_start)
+        .scalar()
+    ) or 0
+    return {
+        "total_used": int(getattr(user, "tokens_used_total", 0) or 0),
+        "remaining": None if user.unlimited_quota else int(user.quota),
+        "unlimited": bool(user.unlimited_quota),
+        "today_used": int(today_used),
+        "total_requests": int(getattr(user, "requests_total", 0) or 0),
+        "today_requests": int(today_requests),
+    }
+
+
+def get_user_detail(user) -> dict:
+    """管理员查看的单个用户信息：注册时间、全部/已用 Tokens、请求统计。"""
+    s = get_user_token_stats(user)
+    total_tokens = None if user.unlimited_quota else (int(user.quota) + int(s["total_used"]))
+    return {
+        "id": user.id,
+        "username": user.username,
+        "is_admin": bool(user.is_admin),
+        "active": bool(user.active),
+        "unlimited": bool(user.unlimited_quota),
+        "created_at": user.created_at.strftime("%Y-%m-%d %H:%M") if user.created_at else "",
+        "remaining": s["remaining"],
+        "total_used": s["total_used"],
+        "total_tokens": total_tokens,
+        "total_requests": s["total_requests"],
+        "today_requests": s["today_requests"],
+        "max_text_length": user.max_text_length,
+        "api_key_count": len(user.api_keys),
+        "max_api_keys": user_max_api_keys(user),
+    }
+
+
+def user_max_api_keys(user) -> int:
+    """该用户最多可创建的 API Key 数：优先用户级 max_api_keys，否则后台默认值。"""
+    v = getattr(user, "max_api_keys", None)
+    if v is not None and int(v) >= 0:
+        return int(v)
+    return get_int("default_max_api_keys", 5)

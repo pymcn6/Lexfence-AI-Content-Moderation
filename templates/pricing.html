@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="{{ get_locale() }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ _('Pricing') }} - {{ SITE.title or APP_NAME }}</title>
+    {% if SITE.favicon %}<link rel="icon" href="{{ SITE.favicon }}">{% endif %}
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>body{margin:0}.fade-in{animation:fade .4s ease}@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}</style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <header class="bg-white border-b border-slate-200">
+        <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+            <a href="{{ url_for('web.homepage') }}" class="flex items-center gap-2 font-semibold text-slate-800">
+                {% if SITE.logo %}<img src="{{ SITE.logo }}" class="h-7" alt="">{% endif %}
+                <span>{{ SITE.name or APP_NAME }}</span>
+            </a>
+            <nav class="flex items-center gap-2 text-sm">
+                <a href="{{ url_for('web.homepage') }}" class="px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition">{{ _('Home') }}</a>
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('web.index') }}" class="px-3 py-1.5 rounded-md bg-brand-600 text-white hover:opacity-90 transition" style="background:#2563eb">{{ _('Console') }}</a>
+                {% else %}
+                <a href="{{ url_for('auth.login') }}" class="px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-100 transition">{{ _('Sign in') }}</a>
+                <a href="{{ url_for('auth.register') }}" class="px-3 py-1.5 rounded-md bg-brand-600 text-white hover:opacity-90 transition" style="background:#2563eb">{{ _('Register') }}</a>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+
+    <main class="fade-in max-w-5xl mx-auto px-4 py-14">
+        <div class="text-center mb-10">
+            <h1 class="text-3xl font-bold text-slate-800 mb-2">{{ _('Pricing') }}</h1>
+            <p class="text-slate-500">{{ _('Billed by actual token usage. Prices below are per 1,000,000 tokens.') }}</p>
+        </div>
+
+        {% if pricing.currencies|length > 1 %}
+        <div class="flex justify-center mb-8">
+            <div class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1" id="curSwitch">
+                {% for c in pricing.currencies %}
+                <button type="button" data-rate="{{ c.rate }}" data-symbol="{{ c.symbol }}" data-code="{{ c.code }}"
+                    class="cur-btn px-3 py-1.5 rounded-md text-sm font-medium transition {% if loop.first %}bg-brand-600 text-white{% else %}text-slate-500 hover:bg-slate-100{% endif %}"
+                    {% if loop.first %}style="background:#2563eb"{% endif %}>{{ c.code }}</button>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            {% set names = {'text': _('Text detection'), 'image': _('Image detection'), 'video': _('Video detection')} %}
+            {% for it in pricing.plans %}
+            <div class="rounded-xl border border-slate-200 bg-white shadow-sm p-6 text-center hover:shadow-md transition">
+                <p class="text-sm font-semibold text-slate-500 mb-3">{{ names[it.key] }}</p>
+                <p class="mb-1">
+                    <span class="text-3xl font-bold text-slate-800 price-amount"
+                          data-base="{{ '%.6f'|format(it.per_m) }}">{{ pricing.base_currency.symbol }}{{ '%g'|format(it.per_m) }}</span>
+                </p>
+                <p class="text-xs text-slate-400">{{ _('per 1M tokens') }}</p>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if pricing.note %}
+        <div class="mt-10 max-w-2xl mx-auto rounded-lg bg-slate-50 border border-slate-200 p-4 text-sm text-slate-600 whitespace-pre-line">{{ pricing.note }}</div>
+        {% endif %}
+
+        <div class="mt-12 text-center">
+            <a href="{{ url_for('web.recharge') }}" class="inline-block px-6 py-3 rounded-md text-white font-semibold transition hover:opacity-90" style="background:#2563eb">{{ _('Recharge now') }}</a>
+        </div>
+    </main>
+
+    <script>
+    (function(){
+        const sw = document.getElementById('curSwitch');
+        if(!sw) return;
+        const amounts = Array.from(document.querySelectorAll('.price-amount'));
+        function fmt(n){
+            if(n >= 100) return n.toFixed(0);
+            if(n >= 1) return n.toFixed(2).replace(/\.?0+$/,'');
+            return n.toFixed(4).replace(/\.?0+$/,'');
+        }
+        sw.querySelectorAll('.cur-btn').forEach(btn=>btn.addEventListener('click', ()=>{
+            const rate = parseFloat(btn.dataset.rate) || 1;
+            const symbol = btn.dataset.symbol || '';
+            sw.querySelectorAll('.cur-btn').forEach(b=>{
+                const on = b === btn;
+                b.classList.toggle('bg-brand-600', on); b.classList.toggle('text-white', on);
+                b.classList.toggle('text-slate-500', !on);
+                b.style.background = on ? '#2563eb' : '';
+            });
+            amounts.forEach(el=>{
+                const base = parseFloat(el.dataset.base) || 0;
+                el.textContent = symbol + fmt(base * rate);
+            });
+        }));
+    })();
+    </script>
+</body>
+</html>

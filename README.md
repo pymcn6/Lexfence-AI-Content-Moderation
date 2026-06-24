@@ -8,24 +8,24 @@
 
 ⭐ If this project helps you, please **[Star it on GitHub](https://github.com/pymcn6/Lexfence-AI-Content-Moderation)** — it really helps!
 
+**[🚀 Live Demo](https://textsafe.pym.plus/demomode)** — try it instantly, no signup needed.
+
 </div>
 
 ---
 
 ### Features
-- **Multi-provider AI channels**: OpenAI, OpenAI-compatible, Claude, Gemini. Add multiple channels, each with its own key, models and limits.
-- **One-click model fetch** with format auto-fallback: tries the selected provider format, then falls back to other shapes (OpenAI `data:[{id}]`, AIHUBMIX `data:[{model_id}]`, Gemini `models:[{name}]`, plain arrays, etc.). Custom models endpoint supported.
-- **Per-model controls**: priority, context window, `max_tokens`, daily token limit, rate limit, thinking mode. Batch enable/disable/delete, plus one-click **enable/pause an entire channel** (toggles all its models).
-- **Priority fallback**: requests try models in priority order; on quota/rate/error it switches to the next.
-- **Custom label sets & prompts**: define your own categories per scene; submitted prompts are AI-audited for malicious intent (audit never crashes when no AI is available — it approves by default).
-- **REST API + Web console**: simple `result: true/false` or labelled responses.
-- **User registration**: admin toggle, with three verification modes — none / email (SMTP, sent asynchronously) / admin approval.
-- **Human verification (CAPTCHA)** on login & registration: built-in image CAPTCHA (anti-OCR distortion), Cloudflare Turnstile, hCaptcha, or Google reCAPTCHA.
-- **Configurable branding**: site name, browser title, homepage description, favicon and logo — all from the admin console.
-- **Update checker**: detects new GitHub releases, shows the changelog, supports a custom proxy prefix to speed up GitHub access, and gives Docker / git update instructions.
-- **Demo mode**: isolated read-only showcase at `/demomode` with its own database.
-- **i18n**: full English / 中文 interface with instant switching and auto language detection.
-- **Easy install**: first-run wizard with **database choice** — auto-detect existing DB, or manually pick SQLite (zero config) or MySQL and fill in connection details (tested before install). Docker & docker-compose ready.
+- **Multi-modal moderation**: review text, images and video in one place.
+- **Multi-provider AI channels**: connect and manage OpenAI, Claude, Gemini and compatible services.
+- **Custom prompts & labels**: define your own prompt templates and categories per scene.
+- **REST API**: synchronous and asynchronous calls (async avoids timeouts on long-running jobs).
+- **Commercialization ready**: a public landing page, a built-in **pricing page** that renders your configured price per 1M tokens (text / image / video) with multi-currency and custom exchange-rate support, plus an embeddable **recharge page** (iframe your own card/payment site) and redemption codes for top-ups.
+- **API key controls**: per-key usage limits (tokens per minute/hour/day/month/year), request-rate limits, expiry, and per-key usage stats; per-user key quota with an admin-configurable site contact shown when the limit is reached.
+- **Token-based billing**: usage metered by tokens, billed by actual consumption.
+- **Admin tools**: user management, quota management, detection logs and a data dashboard.
+- **Demo mode**: an online showcase to try the system instantly.
+- **i18n**: full English / 中文 interface.
+- **Easy deploy**: one-command Docker / docker-compose setup.
 
 ### Quick start (Python)
 ```bash
@@ -113,28 +113,15 @@ volumes:
 
 Tip: put a `.env` file next to `docker-compose.yml` with `SECRET_KEY=...` (and `MYSQL_ROOT_PASSWORD=...` if using MySQL) — Compose loads it automatically. After startup, open **http://localhost:5000** to run the install wizard.
 
-### Updating
-```bash
-# Docker: pull the latest published image
-docker compose pull && docker compose up -d
-# Source:
-git pull && pip install -r requirements.txt   # then restart the service
-```
-The admin **Updates** page checks GitHub releases, shows the changelog, and lets you set a proxy prefix (e.g. `https://ghproxy.com/`) to accelerate access from restricted networks.
+### Publishing a release (web, v2.4.0)
+1. Commit your changes locally and push the branch.
+2. Create the tag and push it: `git tag v2.4.0 && git push origin v2.4.0`.
+3. On GitHub, open **Releases → Draft a new release**, choose tag `v2.4.0`, write the notes, and **Publish**. The bundled GitHub Actions workflow then builds and pushes the Docker image to GHCR automatically.
 
-### API example
-```bash
-curl -X POST "http://localhost:5000/api/v1/detect" \
-  -H "X-API-Key: YOUR_KEY" -H "Content-Type: application/json" \
-  -d '{"text":"some text","scene":"message"}'
-# -> {"result": false}
-```
+**Do NOT upload these** (already covered by `.gitignore`): `.env`, the whole `instance/` folder (SQLite DB, `secret_key`, install lock), any `*.db` / `*.sqlite3`, and `__pycache__/`. Only commit `.env.example` (placeholders only).
 
-### Configuration
-Only startup essentials live in `.env` (see `.env.example`): `SECRET_KEY`, optionally `DATABASE_URL` (or `MYSQL_*`). Everything else — AI channels, prompts, limits, branding, registration, CAPTCHA, SMTP, demo mode, update proxy — is managed in the web console and stored in the database (API keys and secrets are encrypted at rest).
-
-### Notes
-- **Image CAPTCHA fonts**: the Docker image bundles `fonts-dejavu`. For source installs, drop a `.ttf` into `assets/fonts/` for crisp captchas (see that folder's README).
+### Sponsor
+If this project helps you, consider [sponsoring](https://github.com/pymcn6/Lexfence-AI-Content-Moderation/blob/main/sponsor.md).
 
 ### License
 MIT © pymcn

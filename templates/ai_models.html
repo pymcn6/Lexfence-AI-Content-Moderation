@@ -26,7 +26,12 @@
                     {% for m in available_list %}
                     <tr class="hover:bg-slate-50 transition-base">
                         <td class="px-4 py-2.5 text-slate-400">{{ loop.index }}</td>
-                        <td class="px-4 py-2.5 text-slate-700 font-medium">{{ m.name }}</td>
+                        <td class="px-4 py-2.5 text-slate-700 font-medium">
+                            {{ m.name }}
+                            {% for mod in m.modalities %}
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100">{{ _(mod) }}</span>
+                            {% endfor %}
+                        </td>
                         <td class="px-4 py-2.5">
                             <span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">{{ m.provider }}</span>
                         </td>
@@ -49,6 +54,7 @@
                         <th class="px-4 py-2.5 font-medium text-xs">#</th>
                         <th class="px-4 py-2.5 font-medium text-xs">{{ _('Model') }}</th>
                         <th class="px-4 py-2.5 font-medium text-xs">{{ _('Source') }}</th>
+                        <th class="px-4 py-2.5 font-medium text-xs">{{ _('Input types') }}</th>
                         <th class="px-4 py-2.5 font-medium text-xs">{{ _('Status') }}</th>
                     </tr>
                 </thead>
@@ -61,6 +67,11 @@
                             <span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">{{ m.provider }}</span>
                         </td>
                         <td class="px-4 py-2.5">
+                            {% for mod in m.modalities %}
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100">{{ _(mod) }}</span>
+                            {% endfor %}
+                        </td>
+                        <td class="px-4 py-2.5">
                             {% if m.available %}
                             <span class="text-xs text-emerald-600 font-medium">● {{ _(m.reason) }}</span>
                             {% else %}
@@ -69,7 +80,7 @@
                         </td>
                     </tr>
                     {% else %}
-                    <tr><td colspan="4" class="px-4 py-12 text-center text-slate-400 text-sm">{{ _('No models') }}</td></tr>
+                    <tr><td colspan="5" class="px-4 py-12 text-center text-slate-400 text-sm">{{ _('No models') }}</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

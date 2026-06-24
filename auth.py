@@ -16,17 +16,31 @@ auth_bp = Blueprint("auth", __name__)
 
 
 def _is_safe_url(target: str) -> bool:
-    """防止开放重定向：仅允许同站点相对/绝对路径。"""
+    """防止开放重定向：仅允许同站点相对/绝对路径。
+
+    额外加固：拒绝空值、反斜杠变体（\\/\\/evil）、控制字符与非 http(s) scheme。
+    """
+    if not target:
+        return False
+    # 反斜杠常被用于绕过（浏览器会把 \ 当作 /）；含控制字符直接拒绝
+    if "\\" in target or any(ord(c) < 32 for c in target):
+        return False
     ref_url = urlparse(request.host_url)
     test_url = urlparse(urljoin(request.host_url, target))
     return test_url.scheme in ("http", "https") and ref_url.netloc == test_url.netloc
+
+
+def _safe_next():
+    """读取并校验 next 参数，安全则返回，否则 None。"""
+    nxt = request.args.get("next")
+    return nxt if (nxt and _is_safe_url(nxt)) else None
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 @limiter.limit("10 per minute; 50 per hour")
 def login():
     if current_user.is_authenticated and not session.get("is_demo"):
-        return redirect(url_for("web.index"))
+        return redirect(url_for("web.homepage"))
 
     form = LoginForm()
     if form.validate_on_submit():
@@ -41,11 +55,7 @@ def login():
         if user and user.check_password(password):
             session.pop("is_demo", None)  # 清除可能残留的体验会话标志
             login_user(user, remember=False)
-            next_page = request.args.get("next")
-            # 防止开放重定向（含协议相对路径 //evil.com）
-            if next_page and not _is_safe_url(next_page):
-                next_page = None
-            return redirect(next_page or url_for("web.index"))
+            return redirect(_safe_next() or url_for("web.index"))
 
         flash(_("Invalid credentials"), "danger")
 

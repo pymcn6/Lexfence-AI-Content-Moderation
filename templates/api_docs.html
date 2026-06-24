@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}{{ _('API Docs') }} - {{ APP_NAME }}{% endblock %}
+{% block page_title %}{{ _('API Docs') }}{% endblock %}
+{% block content %}
+<div class="max-w-4xl space-y-6">
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center gap-2 flex-wrap">
+            <h2 class="text-sm font-semibold text-slate-700 mr-2">{{ _('Calling methods') }}</h2>
+            <button type="button" data-doc="normal" class="docTab px-3 py-1 rounded-md text-xs font-medium text-white" style="background:#2563eb">{{ _('Normal') }}</button>
+            <button type="button" data-doc="poll" class="docTab px-3 py-1 rounded-md text-xs font-medium text-slate-500 hover:bg-slate-100">{{ _('Polling') }}</button>
+            <button type="button" data-doc="webhook" class="docTab px-3 py-1 rounded-md text-xs font-medium text-slate-500 hover:bg-slate-100">Webhook</button>
+        </div>
+
+        {# ---------------- Normal (synchronous) ---------------- #}
+        <div class="docPane p-6 space-y-5" data-doc="normal">
+            <p class="text-xs text-slate-500">{{ _('Synchronous request that waits for the result. Simplest to use.') }}</p>
+            <div class="flex items-center gap-2">
+                <button type="button" data-m="text" class="mTab mTab-normal px-3 py-1 rounded-md text-xs font-medium bg-brand-600 text-white">{{ _('Text') }}</button>
+                <button type="button" data-m="image" class="mTab mTab-normal px-3 py-1 rounded-md text-xs font-medium text-slate-500 hover:bg-slate-100">{{ _('Image') }}</button>
+                <button type="button" data-m="video" class="mTab mTab-normal px-3 py-1 rounded-md text-xs font-medium text-slate-500 hover:bg-slate-100">{{ _('Video') }}</button>
+            </div>
+            <div class="mPane mPane-normal" data-m="text">
+                <p class="text-xs font-medium text-slate-500 mb-1.5">{{ _('Text detection') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect" \
+  -H "X-API-Key: YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"some text","scene":"message"}'</pre>
+                <p class="text-xs text-slate-400 mt-1.5">{{ _('Optional') }}: <code class="px-1 py-0.5 rounded bg-slate-100">scene</code> (message/nickname), <code class="px-1 py-0.5 rounded bg-slate-100">categories</code>, <code class="px-1 py-0.5 rounded bg-slate-100">prompt_id</code>. {{ _('Returns') }} <code class="px-1 py-0.5 rounded bg-slate-100">{"result": bool}</code> ({{ _('true = violation') }}).</p>
+            </div>
+            <div class="mPane mPane-normal hidden" data-m="image">
+                <p class="text-xs font-medium text-slate-500 mb-1.5">{{ _('Image detection') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect" \
+  -H "X-API-Key: YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"media_type":"image","image_url":"https://example.com/a.jpg"}'</pre>
+                <p class="text-xs text-slate-400 mt-1.5">{{ _('Only public image URLs are accepted.') }} {{ _('Returns') }} <code class="px-1 py-0.5 rounded bg-slate-100">{"result": bool, "label": "..."}</code></p>
+            </div>
+            <div class="mPane mPane-normal hidden" data-m="video">
+                <p class="text-xs font-medium text-slate-500 mb-1.5">{{ _('Video detection') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect" \
+  -H "X-API-Key: YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"media_type":"video","video_url":"https://example.com/a.mp4"}'</pre>
+                <p class="text-xs text-slate-400 mt-1.5">{{ _('Video requires a channel/model with native video support (e.g. Gemini).') }}</p>
+            </div>
+        </div>
+
+        {# ---------------- Polling ---------------- #}
+        <div class="docPane p-6 space-y-5 hidden" data-doc="poll">
+            <p class="text-xs text-slate-500">{{ _('Submit a task then poll for the result. Avoids timeouts on long checks.') }}</p>
+            <div class="flex items-center gap-2">
+                <button type="button" data-m="text" class="mTab mTab-poll px-3 py-1 rounded-md text-xs font-medium bg-brand-600 text-white">{{ _('Text') }}</button>
+                <button type="button" data-m="image" class="mTab mTab-poll px-3 py-1 rounded-md text-xs font-medium text-slate-500 hover:bg-slate-100">{{ _('Image') }}</button>
+                <button type="button" data-m="video" class="mTab mTab-poll px-3 py-1 rounded-md text-xs font-medium text-slate-500 hover:bg-slate-100">{{ _('Video') }}</button>
+            </div>
+            <div class="mPane mPane-poll" data-m="text">
+                <p class="text-xs font-medium text-slate-500 mb-1.5">1. {{ _('Submit a detection task') }} — {{ _('Text detection') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect/submit" \
+  -H "X-API-Key: YOUR_KEY" -H "Content-Type: application/json" \
+  -d '{"text":"some text"}'</pre>
+            </div>
+            <div class="mPane mPane-poll hidden" data-m="image">
+                <p class="text-xs font-medium text-slate-500 mb-1.5">1. {{ _('Submit a detection task') }} — {{ _('Image detection') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect/submit" \
+  -H "X-API-Key: YOUR_KEY" -H "Content-Type: application/json" \
+  -d '{"media_type":"image","image_url":"https://example.com/a.jpg"}'</pre>
+            </div>
+            <div class="mPane mPane-poll hidden" data-m="video">
+                <p class="text-xs font-medium text-slate-500 mb-1.5">1. {{ _('Submit a detection task') }} — {{ _('Video detection') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect/submit" \
+  -H "X-API-Key: YOUR_KEY" -H "Content-Type: application/json" \
+  -d '{"media_type":"video","video_url":"https://example.com/a.mp4"}'</pre>
+            </div>
+            <div>
+                <p class="text-xs font-medium text-slate-500 mb-1.5">2. {{ _('Poll for the result') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl "{{ base }}/api/v1/detect/result?task_id=TASK_ID" \
+  -H "X-API-Key: YOUR_KEY"</pre>
+                <p class="text-xs text-slate-400 mt-1.5">{{ _('While processing:') }} <code class="px-1 py-0.5 rounded bg-slate-100">{"status":"pending"}</code>; {{ _('when done:') }} <code class="px-1 py-0.5 rounded bg-slate-100">{"status":"done","result":{...}}</code></p>
+            </div>
+        </div>
+
+        {# ---------------- Webhook ---------------- #}
+        <div class="docPane p-6 space-y-5 hidden" data-doc="webhook">
+            <p class="text-xs text-slate-500">{{ _('Submit a task with a callback URL; the result is pushed to you when ready.') }}</p>
+            <div class="flex items-center gap-2">
+                <button type="button" data-m="text" class="mTab mTab-webhook px-3 py-1 rounded-md text-xs font-medium bg-brand-600 text-white">{{ _('Text') }}</button>
+                <button type="button" data-m="image" class="mTab mTab-webhook px-3 py-1 rounded-md text-xs font-medium text-slate-500 hover:bg-slate-100">{{ _('Image') }}</button>
+                <button type="button" data-m="video" class="mTab mTab-webhook px-3 py-1 rounded-md text-xs font-medium text-slate-500 hover:bg-slate-100">{{ _('Video') }}</button>
+            </div>
+            <div class="mPane mPane-webhook" data-m="text">
+                <p class="text-xs font-medium text-slate-500 mb-1.5">{{ _('Submit with callback') }} — {{ _('Text detection') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect/submit" \
+  -H "X-API-Key: YOUR_KEY" -H "Content-Type: application/json" \
+  -d '{"text":"some text","callback_url":"https://your-server.com/hook"}'</pre>
+            </div>
+            <div class="mPane mPane-webhook hidden" data-m="image">
+                <p class="text-xs font-medium text-slate-500 mb-1.5">{{ _('Submit with callback') }} — {{ _('Image detection') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect/submit" \
+  -H "X-API-Key: YOUR_KEY" -H "Content-Type: application/json" \
+  -d '{"media_type":"image","image_url":"https://example.com/a.jpg","callback_url":"https://your-server.com/hook"}'</pre>
+            </div>
+            <div class="mPane mPane-webhook hidden" data-m="video">
+                <p class="text-xs font-medium text-slate-500 mb-1.5">{{ _('Submit with callback') }} — {{ _('Video detection') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect/submit" \
+  -H "X-API-Key: YOUR_KEY" -H "Content-Type: application/json" \
+  -d '{"media_type":"video","video_url":"https://example.com/a.mp4","callback_url":"https://your-server.com/hook"}'</pre>
+            </div>
+            <div>
+                <p class="text-xs font-medium text-slate-500 mb-1.5">{{ _('Callback payload (POST to your URL)') }}</p>
+                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">{"task_id":"...","status":"done","result":{"is_spam":false,"label":"normal","used_tokens":123}}</pre>
+                <p class="text-xs text-slate-400 mt-1.5">{{ _('The callback URL must be a public http(s) address.') }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-6 space-y-2">
+        <p class="text-xs text-slate-500">{{ _('categories options (comma separated):') }} <code class="px-1 py-0.5 rounded bg-slate-100">porn</code> · <code class="px-1 py-0.5 rounded bg-slate-100">political</code> · <code class="px-1 py-0.5 rounded bg-slate-100">advertisement</code> · <code class="px-1 py-0.5 rounded bg-slate-100">spam</code> · <code class="px-1 py-0.5 rounded bg-slate-100">insult</code> · <code class="px-1 py-0.5 rounded bg-slate-100">normal</code></p>
+        <p class="text-xs text-slate-500">{{ _('Manage your API keys on the') }} <a href="{{ nsurl('keys') }}" class="text-brand-600 hover:underline" style="color:#2563eb">{{ _('API Keys') }}</a> {{ _('page.') }}</p>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.querySelectorAll('.docTab').forEach(b=>b.addEventListener('click',()=>{
+    const d=b.dataset.doc;
+    document.querySelectorAll('.docTab').forEach(x=>{
+        const on=x.dataset.doc===d;
+        x.style.background=on?'#2563eb':''; x.classList.toggle('text-white',on); x.classList.toggle('text-slate-500',!on);
+    });
+    document.querySelectorAll('.docPane').forEach(p=>p.classList.toggle('hidden',p.dataset.doc!==d));
+}));
+['normal','poll','webhook'].forEach(g=>{
+    document.querySelectorAll('.mTab-'+g).forEach(b=>b.addEventListener('click',()=>{
+        const m=b.dataset.m;
+        document.querySelectorAll('.mTab-'+g).forEach(x=>{
+            const on=x.dataset.m===m;
+            x.classList.toggle('bg-brand-600',on); x.classList.toggle('text-white',on); x.classList.toggle('text-slate-500',!on);
+        });
+        document.querySelectorAll('.mPane-'+g).forEach(p=>p.classList.toggle('hidden',p.dataset.m!==m));
+    }));
+});
+</script>
+{% endblock %}

@@ -5,90 +5,209 @@
 {% set base = request.host_url.rstrip('/') %}
 <div class="max-w-4xl space-y-6">
     <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
-        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-            <div>
-                <h2 class="text-sm font-semibold text-slate-700">{{ _('API key list') }}</h2>
-                <p class="text-xs text-slate-400 mt-0.5">{{ _('Up to 5 keys per account. The plaintext is shown only once at creation.') }}</p>
+        <div class="px-6 py-4 border-b border-slate-100">
+            <div class="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                    <h2 class="text-sm font-semibold text-slate-700">{{ _('API key list') }}</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">{{ _('You can create up to {n} API keys').format(n=max_keys) }}. {{ _('The plaintext is shown only once at creation.') }}
+                    {% if contact_info %}<span class="text-slate-400">{{ _('to create more, please contact {contact}').format(contact=contact_info) }}</span>{% endif %}</p>
+                </div>
+                <a href="{{ nsurl('api_docs') }}" class="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 transition-base">{{ _('API Docs') }} →</a>
             </div>
-            <form method="POST" action="{{ nsurl('create_key') }}" class="inline">
+            <form method="POST" action="{{ nsurl('create_key') }}" class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
-                <button type="submit" class="px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition-base shadow-sm">
-                    + {{ _('Generate key') }}
-                </button>
+                <div class="sm:col-span-2">
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Name (optional)') }}</label>
+                    <input type="text" name="name" maxlength="60" class="w-full px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Token usage limit') }}</label>
+                    <div class="flex gap-2">
+                        <input type="number" name="token_limit" min="1" placeholder="{{ _('Unlimited') }}" class="flex-1 min-w-0 px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+                        <select name="token_limit_period" class="px-2 py-2 rounded-md border border-slate-300 text-sm">
+                            <option value="minute">/{{ _('minute') }}</option>
+                            <option value="hour">/{{ _('hour') }}</option>
+                            <option value="day" selected>/{{ _('day') }}</option>
+                            <option value="month">/{{ _('month') }}</option>
+                            <option value="year">/{{ _('year') }}</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Request rate limit') }}</label>
+                    <div class="flex gap-2">
+                        <input type="number" name="rate_limit" min="1" placeholder="{{ _('Unlimited') }}" class="flex-1 min-w-0 px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+                        <select name="rate_limit_period" class="px-2 py-2 rounded-md border border-slate-300 text-sm">
+                            <option value="minute" selected>/{{ _('minute') }}</option>
+                            <option value="hour">/{{ _('hour') }}</option>
+                            <option value="day">/{{ _('day') }}</option>
+                            <option value="month">/{{ _('month') }}</option>
+                            <option value="year">/{{ _('year') }}</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Expires at (optional)') }}</label>
+                    <input type="datetime-local" name="expires_at" class="w-full px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+                </div>
+                <div class="flex items-end">
+                    <button type="submit" class="w-full px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition-base shadow-sm">+ {{ _('Generate key') }}</button>
+                </div>
             </form>
         </div>
         <div class="divide-y divide-slate-100">
             {% for key in keys %}
-            <div class="flex items-center justify-between px-6 py-4">
-                <div>
-                    <p class="font-mono text-sm text-slate-700">{{ key.key_preview }}</p>
-                    <p class="text-xs text-slate-400 mt-1">{{ _('Created') }} {{ key.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+            <div class="px-6 py-4">
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                    <div class="min-w-0">
+                        <p class="text-sm text-slate-700"><span class="font-medium" data-keyname="{{ key.id }}">{{ key.name or _('Unnamed key') }}</span> <span class="font-mono text-slate-400 text-xs">{{ key.key_preview }}</span></p>
+                        <p class="text-xs text-slate-400 mt-1">{{ _('Created') }} {{ key.created_at.strftime('%Y-%m-%d %H:%M') }}
+                            {% if key.expires_at %}· {{ _('Expires at (optional)') }}: {{ key.expires_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}</p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        {# 已用 / 限制 Tokens（hover 显示详情） #}
+                        {% if key.token_limit %}
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 cursor-help"
+                              title="{{ _('Used') }} {{ key.win_token_used or 0 }} / {{ key.token_limit }} {{ _('per') }} {{ _(key.token_limit_period) }} · {{ _('Total used') }} {{ key.usage_total or 0 }}">
+                            {{ key.win_token_used or 0 }} / {{ key.token_limit }}</span>
+                        {% else %}
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-slate-50 text-slate-600 border border-slate-200 cursor-help"
+                              title="{{ _('Total used') }}: {{ key.usage_total or 0 }} Tokens · {{ key.requests_total or 0 }} {{ _('requests') }}">
+                            {{ _('Used') }} {{ key.usage_total or 0 }}</span>
+                        {% endif %}
+                        {% if key.is_expired() %}
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">{{ _('Expired') }}</span>
+                        {% else %}
+                        <span class="px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">{{ _('Active') }}</span>
+                        {% endif %}
+                        <button type="button" onclick="openKeyModal('view', {{ key.id }})" class="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 transition-base">{{ _('View') }}</button>
+                        <button type="button" onclick="openKeyModal('rename', {{ key.id }})" class="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 transition-base">{{ _('Rename') }}</button>
+                        <button type="button" onclick="toggleLimits({{ key.id }})" class="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 transition-base">{{ _('Limits') }}</button>
+                        <form method="POST" action="{{ nsurl('revoke_key', key_id=key.id) }}" class="inline" onsubmit="return confirm('{{ _('Revoke this key? This cannot be undone.') }}');">
+                            {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                            <button type="submit" class="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-base">{{ _('Revoke') }}</button>
+                        </form>
+                    </div>
                 </div>
-                <div class="flex items-center gap-3">
-                    {% if key.active %}
-                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">{{ _('Active') }}</span>
-                    <form method="POST" action="{{ nsurl('revoke_key', key_id=key.id) }}" class="inline">
-                        {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
-                        <button type="submit" class="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-base">{{ _('Revoke') }}</button>
-                    </form>
-                    {% else %}
-                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">{{ _('Revoked') }}</span>
-                    {% endif %}
-                </div>
+                <form method="POST" action="{{ nsurl('update_key_limits', key_id=key.id) }}" id="limits-{{ key.id }}" class="hidden mt-3 pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Token usage limit') }}</label>
+                        <div class="flex gap-2">
+                            <input type="number" name="token_limit" min="1" value="{{ key.token_limit or '' }}" placeholder="{{ _('Unlimited') }}" class="flex-1 min-w-0 px-2 py-1.5 rounded-md border border-slate-300 text-xs outline-none focus:border-brand-500">
+                            <select name="token_limit_period" class="px-1 py-1.5 rounded-md border border-slate-300 text-xs">
+                                {% for p in ['minute','hour','day','month','year'] %}
+                                <option value="{{ p }}" {% if key.token_limit_period==p %}selected{% endif %}>/{{ _(p) }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Request rate limit') }}</label>
+                        <div class="flex gap-2">
+                            <input type="number" name="rate_limit" min="1" value="{{ key.rate_limit or '' }}" placeholder="{{ _('Unlimited') }}" class="flex-1 min-w-0 px-2 py-1.5 rounded-md border border-slate-300 text-xs outline-none focus:border-brand-500">
+                            <select name="rate_limit_period" class="px-1 py-1.5 rounded-md border border-slate-300 text-xs">
+                                {% for p in ['minute','hour','day','month','year'] %}
+                                <option value="{{ p }}" {% if key.rate_limit_period==p %}selected{% endif %}>/{{ _(p) }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Expires at (optional)') }}</label>
+                        <div class="flex gap-2">
+                            <input type="datetime-local" name="expires_at" value="{{ key.expires_at.strftime('%Y-%m-%dT%H:%M') if key.expires_at else '' }}" class="flex-1 min-w-0 px-2 py-1.5 rounded-md border border-slate-300 text-xs outline-none focus:border-brand-500">
+                            <button type="submit" class="text-xs px-3 py-1.5 rounded-md bg-brand-50 text-brand-600 border border-brand-100 hover:bg-brand-100 font-medium whitespace-nowrap">{{ _('Save') }}</button>
+                        </div>
+                    </div>
+                </form>
             </div>
             {% else %}
             <div class="text-center py-16 text-slate-400 text-sm">{{ _('No API keys yet. Click the button above to generate one.') }}</div>
             {% endfor %}
         </div>
     </div>
+</div>
 
-    <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
-        <div class="px-6 py-4 border-b border-slate-100">
-            <h2 class="text-sm font-semibold text-slate-700">{{ _('Usage examples') }}</h2>
+<div id="keyModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onclick="if(event.target===this)closeKeyModal()">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-slate-700" id="kmTitle"></h3>
+            <button type="button" onclick="closeKeyModal()" class="text-slate-400 hover:text-slate-600 text-lg leading-none">&times;</button>
         </div>
-        <div class="p-6 space-y-5">
+        <div class="p-5 space-y-4">
             <div>
-                <p class="text-xs font-medium text-slate-500 mb-1.5">1. {{ _('Basic detection (all 6 categories)') }}</p>
-                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl "{{ base }}/api/v1/detect?text=hello&format=json" \
-  -H "X-API-Key: YOUR_KEY"</pre>
-                <p class="text-xs text-slate-400 mt-1.5">{{ _('Returns') }} <code class="px-1 py-0.5 rounded bg-slate-100 text-slate-600">{"result": true}</code> {{ _('= violation,') }} <code class="px-1 py-0.5 rounded bg-slate-100 text-slate-600">false</code> = {{ _('normal') }}.</p>
+                <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Confirm your account password') }}</label>
+                <input type="password" id="kmPassword" autocomplete="current-password" class="w-full px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
             </div>
-
-            <div>
-                <p class="text-xs font-medium text-slate-500 mb-1.5">2. {{ _('Specify a scene (e.g. nickname moderation)') }}</p>
-                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl "{{ base }}/api/v1/detect?text=Tom&scene=nickname" \
-  -H "X-API-Key: YOUR_KEY"</pre>
-                <p class="text-xs text-slate-400 mt-1.5">scene: <code class="px-1 py-0.5 rounded bg-slate-100 text-slate-600">message</code> / <code class="px-1 py-0.5 rounded bg-slate-100 text-slate-600">nickname</code>.</p>
+            <div id="kmNameWrap" class="hidden">
+                <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('New name') }}</label>
+                <input type="text" id="kmName" maxlength="60" class="w-full px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
             </div>
-
-            <div>
-                <p class="text-xs font-medium text-slate-500 mb-1.5">3. {{ _('Check only selected categories') }}</p>
-                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect" \
-  -H "X-API-Key: YOUR_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"text":"...","categories":"porn,political,insult"}'</pre>
-                <div class="mt-2 rounded-md bg-slate-50 border border-slate-200 p-3">
-                    <p class="text-xs font-medium text-slate-500 mb-1.5">{{ _('categories options (comma separated):') }}</p>
-                    <ul class="text-xs text-slate-500 space-y-1">
-                        <li><code class="px-1 py-0.5 rounded bg-white border border-slate-200 text-slate-600">porn</code> — {{ _('pornography / sexual content') }}</li>
-                        <li><code class="px-1 py-0.5 rounded bg-white border border-slate-200 text-slate-600">political</code> — {{ _('political violations') }}</li>
-                        <li><code class="px-1 py-0.5 rounded bg-white border border-slate-200 text-slate-600">advertisement</code> — {{ _('ads / promotion') }}</li>
-                        <li><code class="px-1 py-0.5 rounded bg-white border border-slate-200 text-slate-600">spam</code> — {{ _('spam / gibberish') }}</li>
-                        <li><code class="px-1 py-0.5 rounded bg-white border border-slate-200 text-slate-600">insult</code> — {{ _('insults / hate speech') }}</li>
-                        <li><code class="px-1 py-0.5 rounded bg-white border border-slate-200 text-slate-600">normal</code> — {{ _('normal (auto-included)') }}</li>
-                    </ul>
-                </div>
-            </div>
-
-            <div>
-                <p class="text-xs font-medium text-slate-500 mb-1.5">4. {{ _('Use a custom prompt template') }}</p>
-                <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect" \
-  -H "X-API-Key: YOUR_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"text":"...","prompt_id":12}'</pre>
-                <p class="text-xs text-slate-400 mt-1.5">{{ _('prompt_id comes from an approved template on the Custom Prompts page.') }} <code class="px-1 py-0.5 rounded bg-slate-100 text-slate-600">{"result": bool, "label": "..."}</code></p>
+            <div id="kmResult" class="hidden p-3 rounded-md bg-slate-900 text-slate-100 font-mono text-xs break-all"></div>
+            <div id="kmError" class="hidden text-xs text-rose-600"></div>
+            <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button type="button" onclick="closeKeyModal()" class="text-sm px-4 py-2 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100">{{ _('Cancel') }}</button>
+                <button type="button" id="kmSubmit" class="text-sm px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-700 text-white font-medium">{{ _('Confirm') }}</button>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+{% block extra_js %}
+<script>
+const KI18N = {
+    view: '{{ _("View API key") }}', rename: '{{ _("Rename API key") }}',
+    netErr: '{{ _("Request failed, please retry") }}'
+};
+const CSRF = '{{ csrf_token() if config.WTF_CSRF_ENABLED else "" }}';
+const KEYS_BASE = '{{ nsurl("keys") }}';
+window.toggleLimits = function(id){
+    const f = document.getElementById('limits-'+id);
+    if(f) f.classList.toggle('hidden');
+};
+(function(){
+    let mode = 'view', keyId = null;
+    const modal = document.getElementById('keyModal');
+    const nameWrap = document.getElementById('kmNameWrap');
+    const result = document.getElementById('kmResult');
+    const errBox = document.getElementById('kmError');
+
+    window.openKeyModal = function(m, id){
+        mode = m; keyId = id;
+        document.getElementById('kmTitle').textContent = m === 'view' ? KI18N.view : KI18N.rename;
+        document.getElementById('kmPassword').value = '';
+        document.getElementById('kmName').value = '';
+        nameWrap.classList.toggle('hidden', m !== 'rename');
+        result.classList.add('hidden'); result.textContent = '';
+        errBox.classList.add('hidden'); errBox.textContent = '';
+        modal.classList.remove('hidden');
+        document.getElementById('kmPassword').focus();
+    };
+    window.closeKeyModal = function(){ modal.classList.add('hidden'); };
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') closeKeyModal(); });
+
+    document.getElementById('kmSubmit').addEventListener('click', function(){
+        const pwd = document.getElementById('kmPassword').value;
+        const url = KEYS_BASE + '/' + keyId + (mode === 'view' ? '/reveal' : '/rename');
+        const fd = new FormData();
+        fd.append('password', pwd);
+        if(CSRF) fd.append('csrf_token', CSRF);
+        if(mode === 'rename') fd.append('name', document.getElementById('kmName').value);
+        errBox.classList.add('hidden');
+        fetch(url, {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:fd})
+            .then(r => r.json())
+            .then(d => {
+                if(!d.ok){ errBox.textContent = d.error || KI18N.netErr; errBox.classList.remove('hidden'); return; }
+                if(mode === 'view'){ result.textContent = d.key; result.classList.remove('hidden'); }
+                else {
+                    const lbl = document.querySelector('[data-keyname="'+keyId+'"]');
+                    if(lbl) lbl.textContent = d.name || lbl.textContent;
+                    closeKeyModal();
+                }
+            })
+            .catch(() => { errBox.textContent = KI18N.netErr; errBox.classList.remove('hidden'); });
+    });
+})();
+</script>
 {% endblock %}

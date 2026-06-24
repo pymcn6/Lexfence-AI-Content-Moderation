@@ -9,6 +9,7 @@
 
 import re
 import time
+import threading
 
 import requests
 
@@ -18,6 +19,8 @@ import settings_store
 
 _cache = {"ts": 0.0, "data": None}
 _CACHE_TTL = 3600  # 秒
+_refreshing = False
+_lock = threading.Lock()
 
 
 def _proxy_prefix() -> str:
@@ -77,3 +80,48 @@ def check(force: bool = False) -> dict:
     _cache["data"] = result
     _cache["ts"] = now
     return result
+
+
+def peek() -> dict:
+    """非阻塞获取更新信息：立即返回缓存（或当前版本占位），
+    若缓存过期则在后台线程异步刷新，绝不阻塞页面渲染。
+
+    供顶栏每次管理员加载页面时调用，性能友好。
+    """
+    now = time.time()
+    data = _cache["data"]
+    fresh = data and (now - _cache["ts"] < _CACHE_TTL)
+    if not fresh:
+        _async_refresh()
+    if data:
+        return data
+    # 尚无任何缓存时，返回安全占位（不显示更新提示）
+    return {
+        "current": config.APP_VERSION,
+        "latest": config.APP_VERSION,
+        "has_update": False,
+        "changelog": "",
+        "release_url": config.GITHUB_URL + "/releases",
+        "error": "",
+        "checked_at": 0,
+    }
+
+
+def _async_refresh():
+    """在后台线程刷新缓存（带并发保护）。"""
+    global _refreshing
+    with _lock:
+        if _refreshing:
+            return
+        _refreshing = True
+
+    def _run():
+        global _refreshing
+        try:
+            check(force=True)
+        except Exception:
+            pass
+        finally:
+            _refreshing = False
+
+    threading.Thread(target=_run, daemon=True).start()

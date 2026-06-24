@@ -60,6 +60,8 @@ def create_app() -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_bp, url_prefix="/api/v1")
+    # API 使用 X-API-Key 鉴权，免 CSRF（CSRF 仅针对浏览器表单会话）
+    csrf.exempt(api_bp)
     app.register_blueprint(web_bp)
     app.register_blueprint(demo_bp)
     app.register_blueprint(install_bp)
@@ -88,7 +90,55 @@ def create_app() -> Flask:
         except Exception:
             pass
 
+        if config.is_installed():
+            _start_cleanup_scheduler(app)
+
     return app
+
+
+def _start_cleanup_scheduler(app):
+    """后台定时任务：周期性清理超过保留天数的检测日志（账单）。
+
+    使用守护线程 + 进程级单例标记，避免多 worker / 多次 create_app 重复启动。
+    """
+    if getattr(app, "_cleanup_started", False):
+        return
+    app._cleanup_started = True
+    import threading
+
+    def _loop():
+        import time
+        while True:
+            try:
+                with app.app_context():
+                    import settings_store
+                    settings_store.purge_old_logs()
+            except Exception:
+                pass
+            time.sleep(6 * 3600)  # 每 6 小时清理一次
+
+    threading.Thread(target=_loop, daemon=True).start()
+
+
+def _peek_update_info(is_demo):
+    """为顶栏提供更新信息：仅对已登录的真实管理员检测，非阻塞。
+
+    - 体验模式 / 未登录 / 非管理员：返回 None（顶栏不显示）。
+    - 出错或未安装：静默返回 None，绝不影响页面渲染。
+    """
+    if is_demo:
+        return None
+    try:
+        from flask_login import current_user
+        if not (current_user.is_authenticated and getattr(current_user, "is_admin", False)):
+            return None
+        if not config.is_installed():
+            return None
+        import update_checker
+        info = update_checker.peek()
+        return info if info and info.get("has_update") else None
+    except Exception:
+        return None
 
 
 def _adopt_existing_db(app):
@@ -178,7 +228,7 @@ def _register_template_helpers(app):
 
         # 站点品牌：优先后台设置，回退到 config
         site = {"name": config.APP_NAME, "title": config.APP_NAME,
-                "description": "", "favicon": "", "logo": ""}
+                "description": "", "favicon": "", "logo": "", "contact": ""}
         if config.is_installed():
             try:
                 import settings_store
@@ -187,13 +237,15 @@ def _register_template_helpers(app):
                 site["description"] = settings_store.get_setting("site_description") or ""
                 site["favicon"] = settings_store.get_setting("site_favicon") or ""
                 site["logo"] = settings_store.get_setting("site_logo") or ""
+                site["contact"] = settings_store.get_setting("contact_info") or ""
             except Exception:
                 pass
 
         return {"ns": "demo" if is_demo else "web", "is_demo": is_demo,
                 "nsurl": nsurl, "exiturl": exiturl,
                 "APP_NAME": site["name"], "SITE": site,
-                "GITHUB_URL": config.GITHUB_URL}
+                "GITHUB_URL": config.GITHUB_URL,
+                "update_info": _peek_update_info(is_demo)}
 
     @app.route("/setlang/<lang>")
     def setlang(lang):

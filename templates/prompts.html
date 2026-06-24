@@ -22,12 +22,16 @@
                     <div class="flex items-center justify-between mb-1.5">
                         <label class="block text-xs font-medium text-slate-500">{{ _('Label set') }}</label>
                         <div class="flex items-center gap-2">
+                            <select id="builtinKind" class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 bg-white outline-none">
+                                <option value="text">{{ _('Text categories') }}</option>
+                                <option value="media">{{ _('Image/Video categories') }}</option>
+                            </select>
                             <button type="button" id="addBuiltin" class="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-100">+ {{ _('Built-in') }}</button>
                             <button type="button" id="addLabel" class="text-xs px-2 py-1 rounded border border-brand-200 text-brand-600 bg-brand-50 hover:bg-brand-100">+ {{ _('Custom label') }}</button>
                         </div>
                     </div>
                     <div id="labelRows" class="space-y-2"></div>
-                    <p class="text-xs text-slate-400 mt-1.5">{{ _('Check "Blocked" to make the API return result=true when this label hits. Keep at least one non-blocked label (e.g. normal) as fallback.') }}</p>
+                    <p class="text-xs text-slate-400 mt-1.5">{{ _('Check "Blocked" to make the API return result=true when this label hits. Keep at least one non-blocked label (e.g. normal) as fallback.') }} {{ _('For image/video moderation, pick the Image/Video categories and use this template via media detection.') }}</p>
                 </div>
 
                 <div>
@@ -106,6 +110,7 @@
 <script>
 (function () {
     const builtin = {{ builtin|tojson }};
+    const mediaBuiltin = {{ media_builtin|default([])|tojson }};
     const I18N = {
         labelName: "{{ _('Label name') }}",
         labelDef: "{{ _('Definition of this label') }}",
@@ -134,8 +139,10 @@
 
     document.getElementById('addLabel').onclick = () => addRow('', '', false);
     document.getElementById('addBuiltin').onclick = () => {
+        const kind = document.getElementById('builtinKind').value;
+        const set = (kind === 'media' && mediaBuiltin.length) ? mediaBuiltin : builtin;
         const existing = new Set([...rows.querySelectorAll('.lbl')].map(i => i.value.trim()));
-        builtin.forEach(c => { if (!existing.has(c)) addRow(c, '', !['normal','advertisement'].includes(c)); });
+        set.forEach(c => { if (!existing.has(c)) addRow(c, '', !['normal','advertisement'].includes(c)); });
     };
 
     addRow('normal', I18N.normalDef, false);

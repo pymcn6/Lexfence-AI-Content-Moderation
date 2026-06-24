@@ -25,13 +25,26 @@ def admin_required(f):
 
 
 @web_bp.route("/")
+def root():
+    """根路径：公开首页（访客与已登录用户都先看到首页）。"""
+    import settings_store
+    url = settings_store.get_setting("homepage_iframe_url", "") or ""
+    return render_template("homepage.html", iframe_url=url)
+
+
+@web_bp.route("/detect-app")
 @login_required
 def index():
     from models import UserPrompt
+    import settings_store
     my_prompts = UserPrompt.query.filter_by(
         user_id=current_user.id, audit_status="approved"
     ).order_by(UserPrompt.id.desc()).all()
-    return render_template("index.html", user_prompts=my_prompts)
+    return render_template("index.html", user_prompts=my_prompts,
+                           token_reserve_text=settings_store.token_reserve("text"),
+                           token_reserve_image=settings_store.token_reserve("image"),
+                           token_reserve_video=settings_store.token_reserve("video"))
+
 
 
 @web_bp.route("/detect", methods=["POST"])
@@ -39,67 +52,84 @@ def index():
 @limiter.limit("30 per minute")
 def web_detect():
     from flask import jsonify
-    wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
-    text = request.form.get("text", "").strip()
-    if not text:
-        if wants_json:
-            return jsonify({"ok": False, "error": _("Please enter text")}), 200
-        flash(_("Please enter text"), "warning")
-        return redirect(url_for("web.index"))
-
-    # 字数限制与用户配置一致
-    max_len = current_user.max_text_length or current_app.config.get("MAX_TEXT_LENGTH", 5000)
-    if len(text) > max_len:
-        msg = _("Text exceeds the length limit (max {n} chars)").format(n=max_len)
-        if wants_json:
-            return jsonify({"ok": False, "error": msg}), 200
-        flash(msg, "warning")
-        return redirect(url_for("web.index"))
-
-    # 解析检测模板：scene（内置场景）或 prompt_id（自定义模板）
-    labels, extra_prompt, custom, mode = _resolve_web_labels()
-
-    # 网页端检测同样扣减配额（原子扣减，避免并发超卖）
-    if not current_user.consume_quota(1):
-        msg = _("Quota exhausted, cannot detect")
-        if wants_json:
-            return jsonify({"ok": False, "error": msg}), 200
-        flash(msg, "danger")
-        return redirect(url_for("web.index"))
-
-    result = fighter.detect(text, labels=labels, extra_prompt=extra_prompt)
-
-    # 记录检测日志 + 累加月度统计 + 裁剪日志
     import settings_store
-    settings_store.record_detection(current_user.id, text, result)
+    import providers
+    wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    media_type = (request.form.get("media_type") or "text").strip().lower()
+    if media_type not in ("text", "image", "video"):
+        media_type = "text"
+
+    def _err(msg, flash_cat="warning"):
+        if wants_json:
+            return jsonify({"ok": False, "error": msg}), 200
+        flash(msg, flash_cat)
+        return redirect(url_for("web.index"))
+
+    # ---------- 解析输入 ----------
+    if media_type == "text":
+        text = request.form.get("text", "").strip()
+        if not text:
+            return _err(_("Please enter text"))
+        max_len = current_user.max_text_length or current_app.config.get("MAX_TEXT_LENGTH", 5000)
+        if len(text) > max_len:
+            return _err(_("Text exceeds the length limit (max {n} chars)").format(n=max_len))
+        image_urls, video_url, log_preview = None, "", text
+    else:
+        url = (request.form.get("media_url") or "").strip()
+        if not url:
+            return _err(_("Please enter a media URL"))
+        if not providers.is_safe_public_url(url):
+            return _err(_("URL must be a public http(s) address (private/loopback addresses are not allowed)"), "danger")
+        if media_type == "image":
+            image_urls, video_url = [url], ""
+        else:
+            image_urls, video_url = None, url
+        log_preview = url
+
+    # 解析检测模板（媒体类型用媒体场景标签集）
+    labels, extra_prompt, custom, mode = _resolve_web_labels(media_type)
+
+    # Token 预扣（管理员无限不扣）：先按模态预扣估值，AI 返回后按实际用量退差
+    reserve = settings_store.token_reserve(media_type)
+    if not current_user.consume_quota(reserve):
+        return _err(_("Token quota exhausted, cannot detect"), "danger")
+
+    result = fighter.detect(log_preview if media_type == "text" else "",
+                            labels=labels, extra_prompt=extra_prompt,
+                            media_type=media_type, image_urls=image_urls, video_url=video_url)
+
+    # 按实际 token 结算（退还预扣多出的部分或补扣）
+    actual = int(result.get("usage_tokens", 0) or 0)
+    current_user.settle_tokens(reserve, actual)
+
+    # 记录检测日志（媒体存 URL）
+    settings_store.record_detection(current_user.id, log_preview, result, media_type=media_type, tokens=actual)
 
     if wants_json:
-        return jsonify({"ok": True, "result": result})
+        return jsonify({"ok": True, "result": result, "used_tokens": actual,
+                        "quota": current_user.quota_display()})
 
     from models import UserPrompt
     my_prompts = UserPrompt.query.filter_by(
         user_id=current_user.id, audit_status="approved"
     ).order_by(UserPrompt.id.desc()).all()
-    return render_template("index.html", text=text, result=result,
+    return render_template("index.html", text=log_preview, result=result,
                            user_prompts=my_prompts, selected_mode=mode, custom_labels=custom)
 
 
-def _resolve_web_labels():
+def _resolve_web_labels(media_type="text"):
     """根据表单的 mode 解析检测标签集。
 
-    mode 取值：full（全检，默认）/ scene:nickname / prompt:<id>
+    text 模式 mode 取值：full（全检，默认）/ scene:nickname / prompt:<id>
+    image/video 模式：使用媒体场景标签集，或自定义媒体提示词模板 prompt:<id>
     返回 (labels, extra_prompt, is_custom, mode)
     """
     import settings_store
     from models import UserPrompt
 
-    mode = (request.form.get("mode") or "full").strip()
+    mode = (request.form.get("mode") or "").strip()
 
-    if mode.startswith("scene:"):
-        scene = mode.split(":", 1)[1]
-        if scene in settings_store.SCENES:
-            return settings_store.SCENES[scene], "", False, mode
-
+    # 自定义提示词模板（文本/媒体通用）
     if mode.startswith("prompt:"):
         try:
             pid = int(mode.split(":", 1)[1])
@@ -111,6 +141,16 @@ def _resolve_web_labels():
         except (TypeError, ValueError):
             pass
 
+    # 媒体类型：默认用媒体场景标签集
+    if media_type in ("image", "video"):
+        return settings_store.MEDIA_SCENES[media_type], "", False, (mode or media_type)
+
+    # 文本：内置场景
+    if mode.startswith("scene:"):
+        scene = mode.split(":", 1)[1]
+        if scene in settings_store.SCENES:
+            return settings_store.SCENES[scene], "", False, mode
+
     return None, "", False, "full"
 
 
@@ -121,6 +161,17 @@ def users():
     users_list = User.query.all()
     form = UserForm()
     return render_template("users.html", users=users_list, form=form)
+
+
+@web_bp.route("/users/<int:user_id>/detail")
+@login_required
+@admin_required
+def user_detail(user_id: int):
+    """用户详情（JSON）：注册时间、全部/已用 Tokens、总请求数、今日请求数。"""
+    from flask import jsonify
+    import settings_store
+    u = User.query.get_or_404(user_id)
+    return jsonify({"ok": True, **settings_store.get_user_detail(u)})
 
 
 @web_bp.route("/users/create", methods=["POST"])
@@ -180,6 +231,26 @@ def update_quota(user_id: int):
         )
         user.max_text_length = form.max_text_length.data
         user.prompt_quota = form.prompt_quota.data
+        # 最多可创建的 API Key 数（留空=使用后台默认值）
+        mak = (request.form.get("max_api_keys") or "").strip()
+        if mak == "":
+            user.max_api_keys = None
+        else:
+            try:
+                v = int(float(mak))
+                user.max_api_keys = v if 0 <= v <= 1000 else user.max_api_keys
+            except (TypeError, ValueError):
+                pass
+        # 注册信息：邮箱（留空=清除；需唯一）
+        if "email" in request.form:
+            email = (request.form.get("email") or "").strip()[:255]
+            if not email:
+                user.email = None
+            elif User.query.filter(User.email == email, User.id != user.id).first():
+                flash(_("Email already in use"), "danger")
+                return redirect(url_for("web.users"))
+            else:
+                user.email = email
         db.session.commit()
         flash(_("User {name} quota/limits updated").format(name=user.username), "success")
     else:
@@ -272,7 +343,7 @@ def ai_models():
         full.append({
             "order": i, "name": m.model_name, "provider": ch.provider.upper(),
             "channel": ch.name, "available": avail, "reason": reason,
-            "paid": True,
+            "paid": True, "modalities": m.modality_list(),
         })
     available_list = [x for x in full if x["available"]]
 
@@ -386,7 +457,9 @@ def fetch_models(channel_id):
         names = providers.list_models(ch.provider, ch.base_url, ch.get_api_key(),
                                       models_endpoint=ch.models_endpoint or "")
         existing = {m.model_name for m in ch.models}
-        return jsonify({"ok": True, "models": names, "existing": list(existing)})
+        # 同时给出每个模型的推断能力（前端可预勾选）
+        caps = {n: providers.infer_modalities(n) for n in names}
+        return jsonify({"ok": True, "models": names, "existing": list(existing), "caps": caps})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)[:200]}), 200
 
@@ -396,6 +469,7 @@ def fetch_models(channel_id):
 @admin_required
 def add_models(channel_id):
     from models import AIChannel, AIModel
+    import providers
     ch = AIChannel.query.get_or_404(channel_id)
     raw = request.form.get("models") or ""
     names = [n.strip() for n in raw.replace("\n", ",").split(",") if n.strip()]
@@ -404,7 +478,10 @@ def add_models(channel_id):
     for n in names:
         if n in existing:
             continue
-        db.session.add(AIModel(channel_id=ch.id, model_name=n[:120]))
+        mdl = AIModel(channel_id=ch.id, model_name=n[:120])
+        # 默认按模型名推断能力（用户之后可在弹窗里改）
+        mdl.set_modalities(providers.infer_modalities(n))
+        db.session.add(mdl)
         added += 1
     db.session.commit()
     flash(_("Added {n} models").format(n=added), "success")
@@ -429,6 +506,8 @@ def update_model(model_id):
     m.rate_limit_per_min = _int_or_none("rate_limit_per_min")
     m.thinking_mode = bool(request.form.get("thinking_mode"))
     m.enabled = bool(request.form.get("enabled"))
+    # 支持的输入模态（复选框 name=modality，可多选；至少 text）
+    m.set_modalities(request.form.getlist("modality"))
     db.session.commit()
     flash(_("Model {name} updated").format(name=m.model_name), "success")
     return redirect(url_for("web.channels"))
@@ -483,7 +562,9 @@ def prompts():
     my_prompts = UserPrompt.query.filter_by(user_id=current_user.id).order_by(UserPrompt.id.desc()).all()
     import settings_store
     builtin = settings_store.CATEGORIES
-    return render_template("prompts.html", prompts=my_prompts, builtin=builtin)
+    media_builtin = settings_store.MEDIA_CATEGORIES
+    return render_template("prompts.html", prompts=my_prompts,
+                           builtin=builtin, media_builtin=media_builtin)
 
 
 @web_bp.route("/prompts/create", methods=["POST"])
@@ -600,22 +681,118 @@ def delete_prompt(prompt_id: int):
 @web_bp.route("/keys")
 @login_required
 def keys():
+    import settings_store
     my_keys = ApiKey.query.filter_by(user_id=current_user.id).all()
-    return render_template("keys.html", keys=my_keys)
+    return render_template("keys.html", keys=my_keys,
+                           max_keys=settings_store.user_max_api_keys(current_user),
+                           contact_info=settings_store.get_setting("contact_info", ""))
 
 
 @web_bp.route("/keys/create", methods=["POST"])
 @login_required
 def create_key():
-    if len(current_user.api_keys) >= 5:
-        flash(_("Up to 5 API keys per user"), "warning")
+    import settings_store
+    max_keys = settings_store.user_max_api_keys(current_user)
+    if len(current_user.api_keys) >= max_keys:
+        contact = (settings_store.get_setting("contact_info", "") or "").strip()
+        msg = _("You can create up to {n} API keys").format(n=max_keys)
+        if contact:
+            msg += " — " + _("to create more, please contact {contact}").format(contact=contact)
+        flash(msg, "warning")
         return redirect(url_for("web.keys"))
 
-    key = ApiKey.generate(current_user.id)
+    name = (request.form.get("name") or "").strip()[:60]
+    key = ApiKey.generate(current_user.id, name=name)
+    _apply_key_limits(key, request.form)
     db.session.add(key)
     db.session.commit()
     flash(_("API key generated: {key} (shown once, please save)").format(key=key._plain_key), "success")
     return redirect(url_for("web.keys"))
+
+
+def _apply_key_limits(key, form):
+    """从表单解析并应用 Key 的用量/速率/有效期限制（带边界校验）。"""
+    from datetime import datetime
+    periods = ("minute", "hour", "day", "month", "year")
+
+    def _posint(name, lo=1, hi=10**15):
+        raw = (form.get(name) or "").strip()
+        if not raw:
+            return None
+        try:
+            v = int(float(raw))
+        except (TypeError, ValueError):
+            return None
+        if v < lo or v > hi:
+            return None
+        return v
+
+    tl = _posint("token_limit")
+    tlp = (form.get("token_limit_period") or "").strip().lower()
+    key.token_limit = tl if (tl and tlp in periods) else None
+    key.token_limit_period = tlp if key.token_limit else None
+
+    rl = _posint("rate_limit", hi=10**9)
+    rlp = (form.get("rate_limit_period") or "").strip().lower()
+    key.rate_limit = rl if (rl and rlp in periods) else None
+    key.rate_limit_period = rlp if key.rate_limit else None
+
+    exp = (form.get("expires_at") or "").strip()
+    key.expires_at = None
+    if exp:
+        for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                key.expires_at = datetime.strptime(exp, fmt)
+                break
+            except ValueError:
+                continue
+
+
+@web_bp.route("/keys/<int:key_id>/limits", methods=["POST"])
+@login_required
+def update_key_limits(key_id: int):
+    """修改 Key 的用量/速率/有效期限制。"""
+    key = ApiKey.query.get_or_404(key_id)
+    if key.user_id != current_user.id and not current_user.is_admin:
+        flash(_("Not authorized"), "danger")
+        return redirect(url_for("web.keys"))
+    _apply_key_limits(key, request.form)
+    db.session.commit()
+    flash(_("API key limits updated"), "success")
+    return redirect(url_for("web.keys"))
+
+
+@web_bp.route("/keys/<int:key_id>/reveal", methods=["POST"])
+@login_required
+def reveal_key(key_id: int):
+    """验证当前账户密码后返回完整明文 Key（JSON）。"""
+    from flask import jsonify
+    key = ApiKey.query.get_or_404(key_id)
+    if key.user_id != current_user.id and not current_user.is_admin:
+        return jsonify({"ok": False, "error": _("Not authorized")}), 403
+    password = request.form.get("password") or ""
+    if not current_user.check_password(password):
+        return jsonify({"ok": False, "error": _("Incorrect password")}), 200
+    plain = key.reveal()
+    if not plain:
+        return jsonify({"ok": False, "error": _("This key was created before view support and cannot be shown. Please regenerate.")}), 200
+    return jsonify({"ok": True, "key": plain, "name": key.name or ""})
+
+
+@web_bp.route("/keys/<int:key_id>/rename", methods=["POST"])
+@login_required
+def rename_key(key_id: int):
+    """验证密码后修改 Key 名称。"""
+    from flask import jsonify
+    key = ApiKey.query.get_or_404(key_id)
+    if key.user_id != current_user.id and not current_user.is_admin:
+        return jsonify({"ok": False, "error": _("Not authorized")}), 403
+    password = request.form.get("password") or ""
+    if not current_user.check_password(password):
+        return jsonify({"ok": False, "error": _("Incorrect password")}), 200
+    key.name = (request.form.get("name") or "").strip()[:60] or None
+    db.session.commit()
+    return jsonify({"ok": True, "name": key.name or ""})
 
 
 @web_bp.route("/keys/<int:key_id>/revoke", methods=["POST"])
@@ -631,6 +808,160 @@ def revoke_key(key_id: int):
     return redirect(url_for("web.keys"))
 
 
+@web_bp.route("/redeem", methods=["GET", "POST"])
+@login_required
+def redeem():
+    """用户兑换码兑换 token。"""
+    from models import RedeemCode
+    from datetime import datetime
+    from sqlalchemy import update
+    if request.method == "POST":
+        code = (request.form.get("code") or "").strip()
+        rc = RedeemCode.query.filter_by(code=code).first() if code else None
+        if not rc:
+            flash(_("Invalid redeem code"), "danger")
+        elif rc.used:
+            flash(_("This code has already been used"), "danger")
+        else:
+            # 原子标记已用，避免并发重复兑换
+            from models import db as _db
+            updated = _db.session.execute(
+                update(RedeemCode).where(RedeemCode.id == rc.id, RedeemCode.used.is_(False))
+                .values(used=True, used_by=current_user.id, used_at=datetime.utcnow())
+            )
+            _db.session.commit()
+            if updated.rowcount:
+                current_user.redeem_tokens(rc.tokens)
+                flash(_("Redeemed {n} tokens successfully").format(n=rc.tokens), "success")
+            else:
+                flash(_("This code has already been used"), "danger")
+        return redirect(url_for("web.redeem"))
+    return render_template("redeem.html")
+
+
+@web_bp.route("/admin/redeem")
+@login_required
+@admin_required
+def redeem_admin():
+    """兑换码管理（分页在前端处理或服务端分页）。"""
+    from models import RedeemCode
+    codes = RedeemCode.query.order_by(RedeemCode.id.desc()).all()
+    total = len(codes)
+    used = sum(1 for c in codes if c.used)
+    return render_template("redeem_admin.html", codes=codes, total=total, used=used)
+
+
+@web_bp.route("/admin/redeem/generate", methods=["POST"])
+@login_required
+@admin_required
+def redeem_generate():
+    """批量生成兑换码：指定面值 token 与数量。"""
+    from models import RedeemCode, db as _db
+    from datetime import datetime
+    try:
+        tokens = int(request.form.get("tokens") or 0)
+        count = int(request.form.get("count") or 0)
+    except ValueError:
+        flash(_("Invalid input"), "danger")
+        return redirect(url_for("web.redeem_admin"))
+    if tokens <= 0 or count <= 0 or count > 10000:
+        flash(_("Token value must be > 0 and count between 1 and 10000"), "danger")
+        return redirect(url_for("web.redeem_admin"))
+    batch = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    existing = {c.code for c in RedeemCode.query.with_entities(RedeemCode.code).all()}
+    added = 0
+    for _i in range(count):
+        for _retry in range(5):
+            code = RedeemCode.gen_code()
+            if code not in existing:
+                existing.add(code)
+                _db.session.add(RedeemCode(code=code, tokens=tokens, batch=batch))
+                added += 1
+                break
+    _db.session.commit()
+    flash(_("Generated {n} redeem codes").format(n=added), "success")
+    return redirect(url_for("web.redeem_admin"))
+
+
+@web_bp.route("/admin/redeem/import", methods=["POST"])
+@login_required
+@admin_required
+def redeem_import():
+    """批量导入兑换码：txt（每行 "码 面值"）或 json（[{"code","tokens"}]）。查重。"""
+    import json as _json
+    from models import RedeemCode, db as _db
+    raw = (request.form.get("data") or "").strip()
+    if not raw:
+        flash(_("No data to import"), "warning")
+        return redirect(url_for("web.redeem_admin"))
+    pairs = []  # (code, tokens)
+    try:
+        if raw.lstrip().startswith("[") or raw.lstrip().startswith("{"):
+            data = _json.loads(raw)
+            if isinstance(data, dict):
+                data = [data]
+            for it in data:
+                c = str(it.get("code", "")).strip()
+                t = int(it.get("tokens", 0))
+                if c and t > 0:
+                    pairs.append((c, t))
+        else:
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split()
+                if len(parts) >= 2 and parts[1].isdigit():
+                    pairs.append((parts[0], int(parts[1])))
+    except Exception:
+        flash(_("Failed to parse import data"), "danger")
+        return redirect(url_for("web.redeem_admin"))
+
+    existing = {c.code for c in RedeemCode.query.with_entities(RedeemCode.code).all()}
+    seen, added, skipped = set(), 0, 0
+    for code, tokens in pairs:
+        if code in existing or code in seen:
+            skipped += 1
+            continue
+        seen.add(code)
+        _db.session.add(RedeemCode(code=code, tokens=tokens, batch="import"))
+        added += 1
+    _db.session.commit()
+    flash(_("Imported {n} codes, skipped {s} duplicates").format(n=added, s=skipped), "success")
+    return redirect(url_for("web.redeem_admin"))
+
+
+@web_bp.route("/admin/redeem/export", methods=["POST"])
+@login_required
+@admin_required
+def redeem_export():
+    """导出勾选的兑换码为 txt（每行 "码 面值"）。"""
+    from flask import Response
+    from models import RedeemCode
+    ids = [int(i) for i in request.form.getlist("code_ids") if i.isdigit()]
+    if not ids:
+        flash(_("No codes selected"), "warning")
+        return redirect(url_for("web.redeem_admin"))
+    codes = RedeemCode.query.filter(RedeemCode.id.in_(ids)).all()
+    body = "\n".join(f"{c.code} {c.tokens}" for c in codes)
+    return Response(body, mimetype="text/plain",
+                    headers={"Content-Disposition": "attachment; filename=redeem_codes.txt"})
+
+
+@web_bp.route("/admin/redeem/delete", methods=["POST"])
+@login_required
+@admin_required
+def redeem_delete():
+    """删除勾选的兑换码。"""
+    from models import RedeemCode, db as _db
+    ids = [int(i) for i in request.form.getlist("code_ids") if i.isdigit()]
+    if ids:
+        RedeemCode.query.filter(RedeemCode.id.in_(ids)).delete(synchronize_session=False)
+        _db.session.commit()
+        flash(_("Deleted {n} codes").format(n=len(ids)), "success")
+    return redirect(url_for("web.redeem_admin"))
+
+
 @web_bp.route("/logs")
 @login_required
 def logs():
@@ -643,11 +974,79 @@ def logs():
 
 @web_bp.route("/dashboard")
 @login_required
-@admin_required
 def dashboard():
+    """个人数据看板：Token 用量统计 + 账单（检测记录，最近 15 天）。所有登录用户可见。"""
+    import settings_store
+    stats = settings_store.get_user_token_stats(current_user)
+    bills = (DetectionLog.query
+             .filter_by(user_id=current_user.id)
+             .order_by(DetectionLog.created_at.desc())
+             .limit(500).all())
+    return render_template("dashboard.html", stats=stats, bills=bills,
+                           bill_keep_days=settings_store.get_int("bill_keep_days", 15))
+
+
+@web_bp.route("/bill/<int:log_id>")
+@login_required
+def bill_detail(log_id: int):
+    """账单单条详情（JSON）：检测时间、返回类型、内容摘要、消耗 Tokens。"""
+    from flask import jsonify
+    log = DetectionLog.query.get_or_404(log_id)
+    if log.user_id != current_user.id and not current_user.is_admin:
+        return jsonify({"ok": False, "error": _("Not authorized")}), 403
+    return jsonify({
+        "ok": True,
+        "created_at": log.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        "media_type": log.media_type or "text",
+        "result": log.result,
+        "category": log.category,
+        "tokens": log.tokens or 0,
+        "detail": log.detail or "",
+        "model": log.model or "",
+    })
+
+
+@web_bp.route("/site-data")
+@login_required
+@admin_required
+def site_data():
+    """站点数据（原管理员看板）：全站统计。仅管理员可见。"""
     import settings_store
     data = settings_store.get_dashboard()
-    return render_template("dashboard.html", data=data)
+    return render_template("site_data.html", data=data)
+
+
+@web_bp.route("/home")
+def homepage():
+    """公开首页：内嵌后台配置的 iframe；未配置则引导登录。"""
+    import settings_store
+    url = settings_store.get_setting("homepage_iframe_url", "") or ""
+    return render_template("homepage.html", iframe_url=url)
+
+
+@web_bp.route("/pricing")
+def pricing():
+    """公开定价页：按后台配置展示每百万 Tokens 单价，支持多货币换算。"""
+    import settings_store
+    return render_template("pricing.html", pricing=settings_store.get_pricing())
+
+
+
+@web_bp.route("/recharge")
+def recharge():
+    """公开在线充值页：内嵌后台配置的 iframe。"""
+    import settings_store
+    url = settings_store.get_setting("recharge_iframe_url", "") or ""
+    return render_template("recharge.html", iframe_url=url)
+
+
+@web_bp.route("/api-docs")
+@login_required
+def api_docs():
+    """API 文档页（独立于 API Key 页）：普通 / 轮询 / webhook 三种调用方式。"""
+    import settings_store
+    base = settings_store.site_base_url(request.url_root)
+    return render_template("api_docs.html", base=base)
 
 
 @web_bp.route("/settings", methods=["GET", "POST"])
@@ -664,6 +1063,20 @@ def settings():
             "fallback_allow": "1" if form.fallback_allow.data else "0",
             "default_max_tokens": str(form.default_max_tokens.data or 2048),
             "log_keep_per_user": str(form.log_keep_per_user.data or 150),
+            "token_reserve_text": str(form.token_reserve_text.data or 1000),
+            "token_reserve_image": str(form.token_reserve_image.data or 2000),
+            "token_reserve_video": str(form.token_reserve_video.data or 8000),
+            "bill_keep_days": str(form.bill_keep_days.data or 15),
+            "homepage_iframe_url": (form.homepage_iframe_url.data or "").strip(),
+            "recharge_iframe_url": (form.recharge_iframe_url.data or "").strip(),
+            "pricing_enabled": "1" if form.pricing_enabled.data else "0",
+            "pricing_text_per_m": str(form.pricing_text_per_m.data if form.pricing_text_per_m.data is not None else 0),
+            "pricing_image_per_m": str(form.pricing_image_per_m.data if form.pricing_image_per_m.data is not None else 0),
+            "pricing_video_per_m": str(form.pricing_video_per_m.data if form.pricing_video_per_m.data is not None else 0),
+            "pricing_currencies": (form.pricing_currencies.data or "").strip(),
+            "pricing_note": (form.pricing_note.data or "").strip(),
+            "default_max_api_keys": str(form.default_max_api_keys.data if form.default_max_api_keys.data is not None else 5),
+            "contact_info": (form.contact_info.data or "").strip(),
             "demo_enabled": "1" if form.demo_enabled.data else "0",
         })
         flash(_("Settings saved and applied immediately"), "success")
@@ -677,6 +1090,20 @@ def settings():
         form.fallback_allow.data = str(cur.get("fallback_allow", "0")).lower() in ("1", "true", "yes")
         form.default_max_tokens.data = int(float(cur.get("default_max_tokens", 2048)))
         form.log_keep_per_user.data = int(float(cur.get("log_keep_per_user", 150)))
+        form.token_reserve_text.data = int(float(cur.get("token_reserve_text", 1000)))
+        form.token_reserve_image.data = int(float(cur.get("token_reserve_image", 2000)))
+        form.token_reserve_video.data = int(float(cur.get("token_reserve_video", 8000)))
+        form.bill_keep_days.data = int(float(cur.get("bill_keep_days", 15)))
+        form.homepage_iframe_url.data = cur.get("homepage_iframe_url", "")
+        form.recharge_iframe_url.data = cur.get("recharge_iframe_url", "")
+        form.pricing_enabled.data = str(cur.get("pricing_enabled", "1")).lower() in ("1", "true", "yes")
+        form.pricing_text_per_m.data = float(cur.get("pricing_text_per_m", 0) or 0)
+        form.pricing_image_per_m.data = float(cur.get("pricing_image_per_m", 0) or 0)
+        form.pricing_video_per_m.data = float(cur.get("pricing_video_per_m", 0) or 0)
+        form.pricing_currencies.data = cur.get("pricing_currencies", "")
+        form.pricing_note.data = cur.get("pricing_note", "")
+        form.default_max_api_keys.data = int(float(cur.get("default_max_api_keys", 5) or 5))
+        form.contact_info.data = cur.get("contact_info", "")
         form.demo_enabled.data = str(cur.get("demo_enabled", "0")).lower() in ("1", "true", "yes")
     return render_template("settings.html", form=form, cur=cur)
 
@@ -692,6 +1119,7 @@ def save_site_settings():
         # 站点品牌
         "site_name": (f.get("site_name") or "").strip()[:80] or "Lexfence",
         "site_title": (f.get("site_title") or "").strip()[:120],
+        "site_base_url": (f.get("site_base_url") or "").strip()[:255].rstrip("/"),
         "site_description": (f.get("site_description") or "").strip()[:1000],
         "site_favicon": (f.get("site_favicon") or "").strip()[:500],
         "site_logo": (f.get("site_logo") or "").strip()[:500],
@@ -749,6 +1177,7 @@ def updates():
     return render_template("updates.html", info=info,
                            docker_image=_cfg.DOCKER_IMAGE,
                            github_url=_cfg.GITHUB_URL,
+                           site_base=settings_store.site_base_url(request.url_root),
                            github_proxy=settings_store.get_setting("github_proxy", ""))
 
 

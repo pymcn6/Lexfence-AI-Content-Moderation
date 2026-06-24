@@ -75,15 +75,19 @@ def _looks_like_quota_text(content: str) -> bool:
     return any(kw in low for kw in _QUOTA_TEXT_KW)
 
 
-def build_system_prompt(labels=None, extra_prompt: str = "") -> str:
+def build_system_prompt(labels=None, extra_prompt: str = "", media_type: str = "text") -> str:
     if not labels:
         labels = [{"label": k, "definition": v[0], "blocked": v[1]}
                   for k, v in BUILTIN_LABEL_DEFS.items()]
     names = [str(it["label"]).strip() for it in labels if str(it.get("label", "")).strip()]
     names_str = "/".join(names)
+    subject = {
+        "image": "the image(s) provided by the user",
+        "video": "the video provided by the user",
+    }.get(media_type, "the user's text")
     lines = [
         "You are a very strict and meticulous content safety moderator.",
-        f"Classify the user's text into exactly one of the following categories, "
+        f"Classify {subject} into exactly one of the following categories, "
         f"output only one category name ({names_str}), "
         "with no explanation, punctuation, or extra content.\n",
         "Category definitions:",
@@ -94,11 +98,16 @@ def build_system_prompt(labels=None, extra_prompt: str = "") -> str:
         if name:
             lines.append(f"- {name}: {definition}")
     prompt = "\n".join(lines) + "\n"
-    if any(str(it.get("label", "")).strip() == "spam" for it in labels):
+    if media_type == "text" and any(str(it.get("label", "")).strip() == "spam" for it in labels):
         prompt += _SPAM_RULES
+    if media_type in ("image", "video"):
+        prompt += ("\n[Visual moderation rules]:\n"
+                   "Carefully inspect all visual content (objects, scenes, text overlays, "
+                   "people, symbols). Judge the most severe violating element present. "
+                   "If nothing violates, classify as normal.\n")
     if extra_prompt and extra_prompt.strip():
         prompt += "\n[Additional rules]:\n" + extra_prompt.strip() + "\n"
-    prompt += f"\nNow classify the user's text, output only the category name ({names_str})."
+    prompt += f"\nNow classify {subject}, output only the category name ({names_str})."
     return prompt
 
 
@@ -172,7 +181,7 @@ class GPTClassifier:
         return cfg
 
     # ---------- 取当日可用模型（按优先级） ----------
-    def _iter_models(self):
+    def _iter_models(self, modality: str = "text"):
         from models import db, AIChannel, AIModel
         today = datetime.utcnow().strftime("%Y-%m-%d")
         now = datetime.utcnow()
@@ -193,6 +202,9 @@ class GPTClassifier:
             # 当日 token 超限跳过
             if m.daily_token_limit and m.used_tokens_today >= m.daily_token_limit:
                 m.available = False
+                continue
+            # 模态过滤：媒体检测需模型支持对应模态
+            if modality != "text" and not m.supports(modality):
                 continue
             usable.append((m, ch))
         try:
@@ -225,41 +237,54 @@ class GPTClassifier:
             db.session.rollback()
 
     # ---------- 主流程 ----------
-    def classify(self, text: str, labels=None, extra_prompt: str = "") -> Dict:
+    def classify(self, text: str, labels=None, extra_prompt: str = "",
+                 media_type: str = "text", image_urls=None, video_url: str = "") -> Dict:
         cfg = self._runtime()
         fail_open = bool(cfg.get("fail_open"))
         fallback_allow = bool(cfg.get("fallback_allow"))
         default_max = int(cfg.get("default_max_tokens", self.default_max_tokens))
+        media_type = media_type if media_type in ("text", "image", "video") else "text"
+        image_urls = [u for u in (image_urls or []) if u]
 
         if labels:
-            sys_prompt = build_system_prompt(labels, extra_prompt)
+            sys_prompt = build_system_prompt(labels, extra_prompt, media_type=media_type)
             label_names = [str(it["label"]).strip() for it in labels if str(it.get("label", "")).strip()]
             blocked_set = {str(it["label"]).strip() for it in labels if it.get("blocked")}
             default_label = label_names[0] if label_names else "normal"
         else:
-            sys_prompt = build_system_prompt()
+            sys_prompt = build_system_prompt(media_type=media_type)
             label_names = list(ALL_LABELS)
             blocked_set = {k for k, v in BUILTIN_LABEL_DEFS.items() if v[1]}
             default_label = "normal"
 
-        for m, ch in self._iter_models():
+        # 媒体检测时给模型一句话用户文本（仅描述任务，真正内容在多模态附件里）
+        user_text = text if (media_type == "text" or text) else "Classify the attached media."
+
+        for m, ch in self._iter_models(media_type):
             max_tokens = m.max_tokens or default_max
             r = providers.chat(
                 ch.provider, ch.base_url, ch.get_api_key(), m.model_name,
-                sys_prompt, text, max_tokens, bool(m.thinking_mode))
+                sys_prompt, user_text, max_tokens, bool(m.thinking_mode),
+                image_urls=(image_urls if media_type == "image" else None),
+                video_url=(video_url if media_type == "video" else ""))
             st = r.get("status")
             if st == "ok":
                 content = r.get("text", "")
                 if _looks_like_quota_text(content):
                     self._update_model_state(m.id, "quota")
                     continue
-                self._update_model_state(m.id, "ok", r.get("usage_tokens", 0))
+                usage = r.get("usage_tokens", 0)
+                self._update_model_state(m.id, "ok", usage)
                 model_tag = f"{ch.name}:{m.model_name}"
                 lbl = _find_label(content, label_names)
                 if lbl is None:
                     # AI 有响应但输出无法识别 → 归入 fallback，放行与否看后台配置
-                    return self._mk_fallback(fallback_allow, model_tag, content)
-                return self._mk(lbl, "model", blocked_set, model_tag)
+                    res = self._mk_fallback(fallback_allow, model_tag, content)
+                    res["usage_tokens"] = usage
+                    return res
+                res = self._mk(lbl, "model", blocked_set, model_tag)
+                res["usage_tokens"] = usage
+                return res
             if st == "blocked":
                 self._update_model_state(m.id, "ok")
                 return self._mk_filter_blocked(label_names, blocked_set, default_label,

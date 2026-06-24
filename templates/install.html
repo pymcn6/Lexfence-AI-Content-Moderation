@@ -35,6 +35,10 @@
                 <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Site name') }}</label>
                 <input type="text" name="site_name" value="{{ form.site_name or APP_NAME }}" maxlength="60"
                        class="w-full px-3 py-2 rounded-md border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+                <label class="block text-xs font-medium text-slate-500 mb-1 mt-3">{{ _('Site base URL') }}</label>
+                <input type="text" name="site_base_url" value="{{ form.site_base_url or '' }}" maxlength="255" placeholder="https://your-domain.com"
+                       class="w-full px-3 py-2 rounded-md border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-sm">
+                <p class="text-xs text-slate-400 mt-1">{{ _('Public address used in API docs examples and links. Leave empty to use the current request address.') }}</p>
             </div>
 
             <div>

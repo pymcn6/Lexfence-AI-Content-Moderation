@@ -26,6 +26,25 @@ from i18n import _
 demo_bp = Blueprint("demo", __name__, url_prefix="/demomode")
 
 DEMO_MAX_TEXT = 30  # 体验模式每次检测最多 30 字
+DEMO_MAX_IMAGE_BYTES = 3 * 1024 * 1024  # 体验模式图片上限 3MB（节省成本）
+DEMO_MAX_VIDEO_BYTES = 5 * 1024 * 1024  # 体验模式视频上限 5MB
+
+
+def _check_media_size(url: str, limit: int) -> bool:
+    """通过 HEAD 请求检查媒体大小是否在限制内（省成本）。
+
+    无法确定大小（无 Content-Length）时保守拒绝；任何异常也拒绝。
+    """
+    try:
+        import requests
+        r = requests.head(url, timeout=8, allow_redirects=True)
+        cl = r.headers.get("Content-Length")
+        if cl is None:
+            return False
+        return int(cl) <= limit
+    except Exception:
+        return False
+
 
 
 def _demo_enabled() -> bool:
@@ -83,7 +102,10 @@ def index():
     from models import UserPrompt
     prompts = demo_db.DemoSession.query(UserPrompt).filter_by(
         user_id=current_user.id, audit_status="approved").all()
-    return render_template("index.html", user_prompts=prompts)
+    return render_template("index.html", user_prompts=prompts,
+                           token_reserve_text=settings_store.token_reserve("text"),
+                           token_reserve_image=settings_store.token_reserve("image"),
+                           token_reserve_video=settings_store.token_reserve("video"))
 
 
 @demo_bp.route("/detect", methods=["POST"], endpoint="web_detect")
@@ -93,22 +115,45 @@ def index():
 def detect():
     from flask import jsonify
     wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
-    text = (request.form.get("text") or "").strip()
-    if not text:
-        if wants_json:
-            return jsonify({"ok": False, "error": _("Please enter text")}), 200
-        flash(_("Please enter text"), "warning")
-        return redirect(url_for("demo.index"))
-    if len(text) > DEMO_MAX_TEXT:
-        msg = _("Demo mode allows at most {n} characters per detection").format(n=DEMO_MAX_TEXT)
+    media_type = (request.form.get("media_type") or "text").strip().lower()
+    if media_type not in ("text", "image", "video"):
+        media_type = "text"
+
+    def _err(msg, cat="warning"):
         if wants_json:
             return jsonify({"ok": False, "error": msg}), 200
-        flash(msg, "warning")
+        flash(msg, cat)
         return redirect(url_for("demo.index"))
 
-    labels, extra_prompt, custom, mode = _resolve_demo_labels()
-    result = fighter.detect(text, labels=labels, extra_prompt=extra_prompt)
-    demo_db.record_demo_detection(current_user.id, text, result, keep=10)
+    if media_type == "text":
+        text = (request.form.get("text") or "").strip()
+        if not text:
+            return _err(_("Please enter text"))
+        if len(text) > DEMO_MAX_TEXT:
+            return _err(_("Demo mode allows at most {n} characters per detection").format(n=DEMO_MAX_TEXT))
+        image_urls, video_url, log_preview = None, "", text
+    else:
+        import providers
+        url = (request.form.get("media_url") or "").strip()
+        if not url:
+            return _err(_("Please enter a media URL"))
+        if not providers.is_safe_public_url(url):
+            return _err(_("URL must be a public http(s) address (private/loopback addresses are not allowed)"), "danger")
+        if media_type == "image":
+            if not _check_media_size(url, DEMO_MAX_IMAGE_BYTES):
+                return _err(_("Demo mode: image must be a reachable URL within 3MB"))
+            image_urls, video_url = [url], ""
+        else:
+            if not _check_media_size(url, DEMO_MAX_VIDEO_BYTES):
+                return _err(_("Demo mode: video must be a reachable URL within 5MB"))
+            image_urls, video_url = None, url
+        log_preview = url
+
+    labels, extra_prompt, custom, mode = _resolve_demo_labels(media_type)
+    result = fighter.detect(log_preview if media_type == "text" else "",
+                            labels=labels, extra_prompt=extra_prompt,
+                            media_type=media_type, image_urls=image_urls, video_url=video_url)
+    demo_db.record_demo_detection(current_user.id, log_preview, result, keep=10)
 
     if wants_json:
         return jsonify({"ok": True, "result": result})
@@ -116,16 +161,12 @@ def detect():
     from models import UserPrompt
     prompts = demo_db.DemoSession.query(UserPrompt).filter_by(
         user_id=current_user.id, audit_status="approved").all()
-    return render_template("index.html", text=text, result=result,
+    return render_template("index.html", text=log_preview, result=result,
                            user_prompts=prompts, selected_mode=mode)
 
 
-def _resolve_demo_labels():
-    mode = (request.form.get("mode") or "full").strip()
-    if mode.startswith("scene:"):
-        scene = mode.split(":", 1)[1]
-        if scene in settings_store.SCENES:
-            return settings_store.SCENES[scene], "", False, mode
+def _resolve_demo_labels(media_type="text"):
+    mode = (request.form.get("mode") or "").strip()
     if mode.startswith("prompt:"):
         from models import UserPrompt
         try:
@@ -136,6 +177,12 @@ def _resolve_demo_labels():
                 return p.labels(), (p.extra_prompt or ""), True, mode
         except (TypeError, ValueError):
             pass
+    if media_type in ("image", "video"):
+        return settings_store.MEDIA_SCENES[media_type], "", False, (mode or media_type)
+    if mode.startswith("scene:"):
+        scene = mode.split(":", 1)[1]
+        if scene in settings_store.SCENES:
+            return settings_store.SCENES[scene], "", False, mode
     return None, "", False, "full"
 
 
@@ -147,7 +194,9 @@ def _resolve_demo_labels():
 def keys():
     from models import ApiKey
     ks = demo_db.DemoSession.query(ApiKey).filter_by(user_id=current_user.id).all()
-    return render_template("keys.html", keys=ks)
+    return render_template("keys.html", keys=ks,
+                           max_keys=settings_store.get_int("default_max_api_keys", 5),
+                           contact_info=settings_store.get_setting("contact_info", ""))
 
 
 @demo_bp.route("/prompts", endpoint="prompts")
@@ -157,7 +206,8 @@ def prompts():
     from models import UserPrompt
     ps = demo_db.DemoSession.query(UserPrompt).filter_by(
         user_id=current_user.id).order_by(UserPrompt.id.desc()).all()
-    return render_template("prompts.html", prompts=ps, builtin=settings_store.CATEGORIES)
+    return render_template("prompts.html", prompts=ps, builtin=settings_store.CATEGORIES,
+                           media_builtin=settings_store.MEDIA_CATEGORIES)
 
 
 @demo_bp.route("/logs", endpoint="logs")
@@ -174,7 +224,58 @@ def logs():
 @demo_guard
 @login_required
 def dashboard():
-    return render_template("dashboard.html", data=demo_db.get_demo_dashboard())
+    from models import DetectionLog
+    bills = demo_db.DemoSession.query(DetectionLog).order_by(
+        DetectionLog.created_at.desc()).limit(20).all()
+    stats = {"total_used": 0, "remaining": None, "unlimited": True, "today_used": 0}
+    return render_template("dashboard.html", stats=stats, bills=bills, bill_keep_days=15)
+
+
+@demo_bp.route("/site-data", endpoint="site_data")
+@demo_guard
+@login_required
+def site_data():
+    return render_template("site_data.html", data=demo_db.get_demo_dashboard())
+
+
+@demo_bp.route("/recharge", endpoint="recharge")
+@demo_guard
+@login_required
+def recharge():
+    return render_template("recharge.html", iframe_url="")
+
+
+@demo_bp.route("/site-home", endpoint="homepage")
+@demo_guard
+@login_required
+def homepage():
+    return render_template("homepage.html", iframe_url="")
+
+
+@demo_bp.route("/pricing", endpoint="pricing")
+@demo_guard
+@login_required
+def pricing():
+    import settings_store
+    return render_template("pricing.html", pricing=settings_store.get_pricing())
+
+
+
+@demo_bp.route("/api-docs", endpoint="api_docs")
+@demo_guard
+@login_required
+def api_docs():
+    from flask import request as _rq
+    import settings_store
+    return render_template("api_docs.html", base=settings_store.site_base_url(_rq.url_root))
+
+
+@demo_bp.route("/bill/<int:log_id>", endpoint="bill_detail")
+@demo_guard
+@login_required
+def bill_detail(log_id):
+    from flask import jsonify
+    return jsonify({"ok": False, "error": "demo"}), 200
 
 
 @demo_bp.route("/ai-models", endpoint="ai_models")
@@ -183,9 +284,9 @@ def dashboard():
 def ai_models():
     # demo 下展示静态示例（不暴露真实渠道/密钥）
     full = [
-        {"name": "gpt-4o-mini", "provider": "OPENAI", "channel": "Demo OpenAI", "available": True, "reason": "Available", "order": 1, "paid": True},
-        {"name": "claude-3-5-haiku", "provider": "CLAUDE", "channel": "Demo Claude", "available": True, "reason": "Available", "order": 2, "paid": True},
-        {"name": "gemini-1.5-flash", "provider": "GEMINI", "channel": "Demo Gemini", "available": False, "reason": "Daily quota reached", "order": 3, "paid": True},
+        {"name": "gpt-4o-mini", "provider": "OPENAI", "channel": "Demo OpenAI", "available": True, "reason": "Available", "order": 1, "paid": True, "modalities": ["text", "image"]},
+        {"name": "claude-3-5-haiku", "provider": "CLAUDE", "channel": "Demo Claude", "available": True, "reason": "Available", "order": 2, "paid": True, "modalities": ["text", "image"]},
+        {"name": "gemini-1.5-flash", "provider": "GEMINI", "channel": "Demo Gemini", "available": False, "reason": "Daily quota reached", "order": 3, "paid": True, "modalities": ["text", "image", "video"]},
     ]
     return render_template("ai_models.html", full_list=full,
                            available_list=[x for x in full if x["available"]], day="demo")
@@ -199,6 +300,22 @@ def channels():
     return render_template("channels.html", channels=[])
 
 
+@demo_bp.route("/redeem", endpoint="redeem", methods=["GET", "POST"])
+@demo_guard
+@login_required
+def redeem_get():
+    if request.method == "POST":
+        return block_write()
+    return render_template("redeem.html")
+
+
+@demo_bp.route("/admin/redeem", endpoint="redeem_admin")
+@demo_guard
+@login_required
+def redeem_admin():
+    return render_template("redeem_admin.html", codes=[], total=0, used=0)
+
+
 @demo_bp.route("/updates", endpoint="updates")
 @demo_guard
 @login_required
@@ -209,7 +326,7 @@ def updates():
             "release_url": _cfg.GITHUB_URL + "/releases", "checked_at": 0}
     return render_template("updates.html", info=info,
                            docker_image=_cfg.DOCKER_IMAGE,
-                           github_url=_cfg.GITHUB_URL, github_proxy="")
+                           github_url=_cfg.GITHUB_URL, site_base="", github_proxy="")
 
 
 @demo_bp.route("/users", endpoint="users")
@@ -220,6 +337,19 @@ def users():
     from forms import UserForm
     us = demo_db.DemoSession.query(User).all()
     return render_template("users.html", users=us, form=UserForm())
+
+
+@demo_bp.route("/users/<int:user_id>/detail", endpoint="user_detail")
+@demo_guard
+@login_required
+def user_detail(user_id):
+    from flask import jsonify
+    from models import User
+    import settings_store
+    u = demo_db.DemoSession.query(User).filter_by(id=user_id).first()
+    if not u:
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    return jsonify({"ok": True, **settings_store.get_user_detail(u)})
 
 
 @demo_bp.route("/settings", methods=["GET", "POST"], endpoint="settings")
@@ -236,6 +366,12 @@ def settings():
     form.fallback_allow.data = str(cur.get("fallback_allow", "0")).lower() in ("1", "true", "yes")
     form.default_max_tokens.data = int(float(cur.get("default_max_tokens", 2048)))
     form.log_keep_per_user.data = int(float(cur.get("log_keep_per_user", 150)))
+    form.token_reserve_text.data = int(float(cur.get("token_reserve_text", 1000)))
+    form.token_reserve_image.data = int(float(cur.get("token_reserve_image", 2000)))
+    form.token_reserve_video.data = int(float(cur.get("token_reserve_video", 8000)))
+    form.bill_keep_days.data = int(float(cur.get("bill_keep_days", 15)))
+    form.homepage_iframe_url.data = cur.get("homepage_iframe_url", "")
+    form.recharge_iframe_url.data = cur.get("recharge_iframe_url", "")
     form.demo_enabled.data = str(cur.get("demo_enabled", "0")).lower() in ("1", "true", "yes")
     return render_template("settings.html", form=form, cur=cur, demo_readonly=True)
 
@@ -245,6 +381,9 @@ def settings():
 _WRITE_ENDPOINTS = [
     ("/keys/create", "create_key"),
     ("/keys/<int:key_id>/revoke", "revoke_key"),
+    ("/keys/<int:key_id>/reveal", "reveal_key"),
+    ("/keys/<int:key_id>/rename", "rename_key"),
+    ("/keys/<int:key_id>/limits", "update_key_limits"),
     ("/prompts/create", "create_prompt"),
     ("/prompts/<int:prompt_id>/delete", "delete_prompt"),
     ("/users/create", "create_user"),
@@ -264,6 +403,10 @@ _WRITE_ENDPOINTS = [
     ("/models/batch", "batch_models"),
     ("/settings/site", "save_site_settings"),
     ("/updates/proxy", "save_update_proxy"),
+    ("/admin/redeem/generate", "redeem_generate"),
+    ("/admin/redeem/import", "redeem_import"),
+    ("/admin/redeem/export", "redeem_export"),
+    ("/admin/redeem/delete", "redeem_delete"),
 ]
 
 

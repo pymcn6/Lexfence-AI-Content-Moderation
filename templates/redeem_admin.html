@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Redeem Codes') }} - {{ APP_NAME }}{% endblock %}
+{% block page_title %}{{ _('Redeem Codes') }}{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
+            <div class="px-6 py-4 border-b border-slate-100">
+                <h2 class="text-sm font-semibold text-slate-700">{{ _('Generate codes') }}</h2>
+            </div>
+            <form method="POST" action="{{ nsurl('redeem_generate') }}" class="p-6 space-y-4">
+                {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Token value per code') }}</label>
+                    <input type="number" name="tokens" min="1" value="10000" required class="w-full px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-500 mb-1">{{ _('Count') }}</label>
+                    <input type="number" name="count" min="1" max="10000" value="10" required class="w-full px-3 py-2 rounded-md border border-slate-300 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+                </div>
+                <button type="submit" class="px-5 py-2.5 rounded-md bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition-base shadow-sm">{{ _('Generate') }}</button>
+            </form>
+        </div>
+
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
+            <div class="px-6 py-4 border-b border-slate-100">
+                <h2 class="text-sm font-semibold text-slate-700">{{ _('Import codes') }}</h2>
+                <p class="text-xs text-slate-400 mt-0.5">{{ _('txt: one per line "code tokens"; or JSON array [{"code","tokens"}]. Duplicates are skipped.') }}</p>
+            </div>
+            <form method="POST" action="{{ nsurl('redeem_import') }}" class="p-6 space-y-4">
+                {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                <textarea name="data" rows="5" placeholder="ABC...xyz 10000&#10;DEF...uvw 5000" class="w-full px-3 py-2 rounded-md border border-slate-300 text-xs font-mono focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none resize-y"></textarea>
+                <button type="submit" class="px-5 py-2.5 rounded-md bg-slate-700 hover:bg-slate-800 text-white text-sm font-semibold transition-base shadow-sm">{{ _('Import') }}</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
+            <h2 class="text-sm font-semibold text-slate-700">{{ _('All codes') }}
+                <span class="text-xs font-normal text-slate-400 ml-2">{{ _('Total') }}: {{ total }} · {{ _('Used') }}: {{ used }}</span>
+            </h2>
+            <div class="flex items-center gap-2 text-xs text-slate-500">
+                <span>{{ _('Per page') }}:</span>
+                <select id="pageSize" class="px-2 py-1 rounded border border-slate-300 text-xs">
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="300">300</option>
+                    <option value="all">ALL</option>
+                </select>
+            </div>
+        </div>
+        <form method="POST" id="codesForm">
+            {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+            <div class="px-6 py-3 border-b border-slate-100 flex items-center gap-2 text-xs">
+                <label class="flex items-center gap-1 text-slate-500"><input type="checkbox" id="selAll"> {{ _('Select all') }}</label>
+                <span class="text-slate-300">|</span>
+                <button type="button" onclick="submitWith('{{ nsurl('redeem_export') }}')" class="px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-100">{{ _('Export selected') }}</button>
+                <button type="button" onclick="if(confirm('{{ _('Delete selected codes?') }}'))submitWith('{{ nsurl('redeem_delete') }}')" class="px-2 py-1 rounded border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100">{{ _('Delete selected') }}</button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-slate-50 text-slate-500 border-b border-slate-100">
+                        <tr>
+                            <th class="px-4 py-2.5 font-medium text-xs w-8"></th>
+                            <th class="px-4 py-2.5 font-medium text-xs">{{ _('Code') }}</th>
+                            <th class="px-4 py-2.5 font-medium text-xs">{{ _('Tokens') }}</th>
+                            <th class="px-4 py-2.5 font-medium text-xs">{{ _('Status') }}</th>
+                            <th class="px-4 py-2.5 font-medium text-xs">{{ _('Created') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100" id="codeRows">
+                        {% for c in codes %}
+                        <tr class="code-row hover:bg-slate-50">
+                            <td class="px-4 py-2.5"><input type="checkbox" name="code_ids" value="{{ c.id }}" class="csel"></td>
+                            <td class="px-4 py-2.5 font-mono text-xs text-slate-600 break-all">{{ c.code }}</td>
+                            <td class="px-4 py-2.5 text-slate-700">{{ c.tokens }}</td>
+                            <td class="px-4 py-2.5">
+                                {% if c.used %}<span class="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-500 border border-slate-200">{{ _('Used') }}</span>
+                                {% else %}<span class="px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700 border border-emerald-200">{{ _('Unused') }}</span>{% endif %}
+                            </td>
+                            <td class="px-4 py-2.5 text-xs text-slate-400">{{ c.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="px-4 py-12 text-center text-slate-400 text-sm">{{ _('No redeem codes yet.') }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="px-6 py-3 flex items-center justify-between text-xs text-slate-500" id="pager"></div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function(){
+    const rows = Array.from(document.querySelectorAll('#codeRows .code-row'));
+    const pageSizeSel = document.getElementById('pageSize');
+    const pager = document.getElementById('pager');
+    let page = 1;
+
+    function pageSize(){ const v = pageSizeSel.value; return v === 'all' ? rows.length || 1 : parseInt(v); }
+
+    function render(){
+        const size = pageSize();
+        const total = rows.length;
+        const pages = Math.max(1, Math.ceil(total / size));
+        if(page > pages) page = pages;
+        rows.forEach((r, i) => {
+            const start = (page-1)*size, end = page*size;
+            r.style.display = (i >= start && i < end) ? '' : 'none';
+        });
+        pager.innerHTML = '';
+        if(total === 0) return;
+        const info = document.createElement('span');
+        info.textContent = '{{ _("Page") }} ' + page + ' / ' + pages + ' · {{ _("Total") }} ' + total;
+        pager.appendChild(info);
+        const nav = document.createElement('div');
+        nav.className = 'flex items-center gap-2';
+        const prev = document.createElement('button');
+        prev.type = 'button'; prev.textContent = '{{ _("Prev") }}';
+        prev.className = 'px-2 py-1 rounded border border-slate-300 hover:bg-slate-100';
+        prev.disabled = page <= 1; prev.onclick = () => { if(page>1){page--; render();} };
+        const next = document.createElement('button');
+        next.type = 'button'; next.textContent = '{{ _("Next") }}';
+        next.className = 'px-2 py-1 rounded border border-slate-300 hover:bg-slate-100';
+        next.disabled = page >= pages; next.onclick = () => { if(page<pages){page++; render();} };
+        nav.appendChild(prev); nav.appendChild(next);
+        pager.appendChild(nav);
+    }
+    pageSizeSel.addEventListener('change', () => { page = 1; render(); });
+    render();
+
+    document.getElementById('selAll').addEventListener('change', function(){
+        // 仅勾选当前可见行，避免误操作其它页
+        rows.forEach(r => { if(r.style.display !== 'none'){ const c = r.querySelector('.csel'); if(c) c.checked = this.checked; } });
+    });
+
+    window.submitWith = function(action){
+        const sel = document.querySelectorAll('.csel:checked');
+        if(!sel.length){ alert('{{ _("No codes selected") }}'); return; }
+        const form = document.getElementById('codesForm');
+        form.action = action;
+        form.submit();
+    };
+})();
+</script>
+{% endblock %}

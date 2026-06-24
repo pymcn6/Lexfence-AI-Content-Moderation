@@ -39,105 +39,201 @@
 
     <div class="xl:col-span-3">
         <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-            <div class="px-6 py-4 border-b border-slate-100">
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
                 <h2 class="text-sm font-semibold text-slate-700">{{ _('User list') }}</h2>
+                <div class="flex items-center gap-1.5 text-xs text-slate-500">
+                    <span>{{ _('Per page') }}:</span>
+                    <select id="userPageSize" class="px-2 py-1 rounded border border-slate-300 text-xs">
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="300">300</option>
+                        <option value="all">ALL</option>
+                    </select>
+                </div>
             </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm text-left">
-                    <thead class="bg-slate-50 text-slate-500 border-b border-slate-100">
-                        <tr>
-                            <th class="px-4 py-3 font-medium text-xs">{{ _('Username') }}</th>
-                            <th class="px-4 py-3 font-medium text-xs">{{ _('Role') }}</th>
-                            <th class="px-4 py-3 font-medium text-xs">{{ _('Monthly quota') }}</th>
-                            <th class="px-4 py-3 font-medium text-xs">{{ _('Remaining') }}</th>
-                            <th class="px-4 py-3 font-medium text-xs">{{ _('Max chars') }}</th>
-                            <th class="px-4 py-3 font-medium text-xs">{{ _('Status') }}</th>
-                            <th class="px-4 py-3 font-medium text-xs">{{ _('Actions') }}</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-                        {% for user in users %}
-                        <tr class="hover:bg-slate-50 transition-base">
-                            <td class="px-4 py-3 font-medium text-slate-700">{{ user.username }}</td>
-                            <td class="px-4 py-3">
-                                {% if user.is_admin %}
-                                <span class="px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">{{ _('Admin') }}</span>
-                                {% else %}
-                                <span class="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">{{ _('Normal user') }}</span>
-                                {% endif %}
-                            </td>
-                            <td class="px-4 py-3 text-slate-600">{{ user.monthly_quota }}</td>
-                            <td class="px-4 py-3 text-slate-600">{{ user.quota }}</td>
-                            <td class="px-4 py-3 text-slate-600">{{ user.max_text_length }}</td>
-                            <td class="px-4 py-3">
-                                {% if user.active %}
-                                <span class="px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">{{ _('Normal') }}</span>
-                                {% else %}
-                                <span class="px-2 py-0.5 rounded text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">{{ _('Disabled') }}</span>
-                                {% endif %}
-                            </td>
-                            <td class="px-4 py-3">
-                                {% if not user.is_admin %}
-                                <form method="POST" action="{{ nsurl('toggle_user', user_id=user.id) }}" class="inline">
-                                    {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
-                                    <button type="submit" class="text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 transition-base">
-                                        {{ _('Disable') if user.active else _('Enable') }}
-                                    </button>
-                                </form>
-                                {% else %}
-                                <span class="text-xs text-slate-300">—</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        <tr class="bg-slate-50/60">
-                            <td colspan="7" class="px-4 py-3 space-y-3">
-                                <form method="POST" action="{{ nsurl('update_quota', user_id=user.id) }}" class="flex flex-wrap items-center gap-3">
-                                    {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-xs text-slate-500">{{ _('Monthly quota') }}</span>
-                                        <input type="number" name="monthly_quota" value="{{ user.monthly_quota }}" class="w-24 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
-                                    </div>
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-xs text-slate-500">{{ _('Remaining') }}</span>
-                                        <input type="number" name="current_quota" value="{{ user.quota }}" class="w-24 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
-                                    </div>
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-xs text-slate-500">{{ _('Max chars') }}</span>
-                                        <input type="number" name="max_text_length" value="{{ user.max_text_length }}" class="w-24 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
-                                    </div>
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-xs text-slate-500">{{ _('Prompt quota') }}</span>
-                                        <input type="number" name="prompt_quota" value="{{ user.prompt_quota }}" class="w-20 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
-                                    </div>
-                                    <button type="submit" class="text-xs px-3 py-1.5 rounded-md bg-brand-50 text-brand-600 border border-brand-100 hover:bg-brand-100 transition-base font-medium">{{ _('Save quota') }}</button>
-                                </form>
-                                <div class="flex flex-wrap items-center gap-3">
+
+            <div class="p-5">
+                <div id="userGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {% for user in users %}
+                    <div class="user-card rounded-lg border border-slate-200 bg-white hover:shadow-md transition-all duration-200" data-uid="{{ user.id }}">
+                        <button type="button" class="uc-head w-full flex items-center justify-between gap-2 px-4 py-3 text-left">
+                            <div class="min-w-0">
+                                <p class="font-medium text-slate-700 truncate">{{ user.username }}</p>
+                                <div class="flex items-center gap-1.5 mt-1">
+                                    {% if user.is_admin %}
+                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">{{ _('Admin') }}</span>
+                                    {% else %}
+                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">{{ _('Normal user') }}</span>
+                                    {% endif %}
+                                    {% if user.active %}
+                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">{{ _('Normal') }}</span>
+                                    {% else %}
+                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-50 text-rose-700 border border-rose-200">{{ _('Disabled') }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <svg class="uc-caret w-4 h-4 text-slate-400 shrink-0 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </button>
+
+                        <div class="uc-body overflow-hidden transition-all duration-300" style="max-height:0">
+                            <div class="px-4 pb-4 border-t border-slate-100 pt-3">
+                                <div class="flex items-center gap-2 mb-3">
+                                    <button type="button" class="uc-tab text-xs px-2.5 py-1 rounded-md bg-brand-50 text-brand-600 border border-brand-100 font-medium" data-tab="info">{{ _('Info') }}</button>
+                                    <button type="button" class="uc-tab text-xs px-2.5 py-1 rounded-md text-slate-500 border border-transparent hover:bg-slate-100" data-tab="ops">{{ _('Operations') }}</button>
+                                </div>
+
+                                <div class="uc-pane" data-pane="info">
+                                    <dl class="text-xs space-y-1.5 uc-info"><p class="text-slate-400">...</p></dl>
+                                </div>
+
+                                <div class="uc-pane hidden space-y-3" data-pane="ops">
+                                    {% if not user.is_admin %}
+                                    <form method="POST" action="{{ nsurl('toggle_user', user_id=user.id) }}">
+                                        {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                                        <button type="submit" class="w-full text-xs px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 transition">{{ _('Disable') if user.active else _('Enable') }}</button>
+                                    </form>
+                                    {% endif %}
+                                    <form method="POST" action="{{ nsurl('update_quota', user_id=user.id) }}" class="space-y-2">
+                                        {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+                                        <label class="block text-[11px] text-slate-500">{{ _('Monthly tokens') }}
+                                            <input type="number" name="monthly_quota" value="{{ user.monthly_quota }}" class="mt-0.5 w-full px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"></label>
+                                        <label class="block text-[11px] text-slate-500">{{ _('Remaining') }}
+                                            <input type="number" name="current_quota" value="{{ user.quota }}" class="mt-0.5 w-full px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"></label>
+                                        <label class="block text-[11px] text-slate-500">{{ _('Max chars') }}
+                                            <input type="number" name="max_text_length" value="{{ user.max_text_length }}" class="mt-0.5 w-full px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"></label>
+                                        <label class="block text-[11px] text-slate-500">{{ _('Prompt quota') }}
+                                            <input type="number" name="prompt_quota" value="{{ user.prompt_quota }}" class="mt-0.5 w-full px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"></label>
+                                        <label class="block text-[11px] text-slate-500">{{ _('Max API keys (blank = default)') }}
+                                            <input type="number" name="max_api_keys" value="{{ user.max_api_keys if user.max_api_keys is not none else '' }}" min="0" max="1000" placeholder="{{ _('Default') }}" class="mt-0.5 w-full px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"></label>
+                                        <label class="block text-[11px] text-slate-500">{{ _('Email (registration info)') }}
+                                            <input type="email" name="email" value="{{ user.email or '' }}" maxlength="255" placeholder="{{ _('Optional') }}" class="mt-0.5 w-full px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"></label>
+                                        <button type="submit" class="w-full text-xs px-3 py-1.5 rounded-md bg-brand-50 text-brand-600 border border-brand-100 hover:bg-brand-100 transition font-medium">{{ _('Save quota') }}</button>
+                                    </form>
                                     <form method="POST" action="{{ nsurl('rename_user', user_id=user.id) }}" class="flex items-center gap-2">
                                         {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
-                                        <span class="text-xs text-slate-500">{{ _('Username') }}</span>
-                                        <input type="text" name="username" value="{{ user.username }}" maxlength="80" class="w-36 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
-                                        <button type="submit" class="text-xs px-3 py-1.5 rounded-md bg-white text-slate-600 border border-slate-300 hover:bg-slate-100 transition-base font-medium">{{ _('Rename') }}</button>
+                                        <input type="text" name="username" value="{{ user.username }}" maxlength="80" class="flex-1 min-w-0 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+                                        <button type="submit" class="text-xs px-3 py-1.5 rounded-md bg-white text-slate-600 border border-slate-300 hover:bg-slate-100 transition font-medium whitespace-nowrap">{{ _('Rename') }}</button>
                                     </form>
                                     <form method="POST" action="{{ nsurl('reset_user_password', user_id=user.id) }}" class="flex items-center gap-2">
                                         {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
-                                        <span class="text-xs text-slate-500">{{ _('New password') }}</span>
-                                        <input type="text" name="password" placeholder="{{ _('min 6 chars') }}" minlength="6" maxlength="128" class="w-32 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
-                                        <button type="submit" class="text-xs px-3 py-1.5 rounded-md bg-white text-slate-600 border border-slate-300 hover:bg-slate-100 transition-base font-medium">{{ _('Reset password') }}</button>
+                                        <input type="text" name="password" placeholder="{{ _('min 6 chars') }}" minlength="6" maxlength="128" class="flex-1 min-w-0 px-2 py-1 rounded-md bg-white border border-slate-300 text-xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500">
+                                        <button type="submit" class="text-xs px-3 py-1.5 rounded-md bg-white text-slate-600 border border-slate-300 hover:bg-slate-100 transition font-medium whitespace-nowrap">{{ _('Reset password') }}</button>
                                     </form>
                                     {% if not user.is_admin and user.id != current_user.id %}
-                                    <form method="POST" action="{{ nsurl('delete_user', user_id=user.id) }}" class="inline" onsubmit="return confirm('{{ _('Delete this user? This cannot be undone and will remove their logs and keys.') }}');">
+                                    <form method="POST" action="{{ nsurl('delete_user', user_id=user.id) }}" onsubmit="return confirm('{{ _('Delete this user? This cannot be undone and will remove their logs and keys.') }}');">
                                         {% if config.WTF_CSRF_ENABLED %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
-                                        <button type="submit" class="text-xs px-3 py-1.5 rounded-md bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition-base font-medium">{{ _('Delete user') }}</button>
+                                        <button type="submit" class="w-full text-xs px-3 py-1.5 rounded-md bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition font-medium">{{ _('Delete user') }}</button>
                                     </form>
                                     {% endif %}
                                 </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-slate-400 text-sm col-span-full text-center py-12">{{ _('No users yet') }}</p>
+                    {% endfor %}
+                </div>
+                <div class="mt-4 flex items-center justify-between text-xs text-slate-500" id="userPager"></div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+{% block extra_js %}
+<script>
+const UI18N = {
+    created: '{{ _("Registered at") }}', totalTokens: '{{ _("Total tokens (all)") }}',
+    used: '{{ _("Tokens used") }}', remaining: '{{ _("Remaining tokens") }}',
+    totalReq: '{{ _("Total requests") }}', todayReq: {{ _("Today's requests")|tojson }},
+    apiKeys: '{{ _("API keys created") }}',
+    unlimited: '{{ _("Unlimited") }}', netErr: '{{ _("Request failed, please retry") }}',
+    page: '{{ _("Page") }}', total: '{{ _("Total") }}', prev: '{{ _("Prev") }}', next: '{{ _("Next") }}'
+};
+const DETAIL_URL = '{{ nsurl("user_detail", user_id=0) }}';
+function esc(s){ const d=document.createElement('div'); d.textContent=(s==null?'':s); return d.innerHTML; }
+
+(function(){
+    const cards = Array.from(document.querySelectorAll('#userGrid .user-card'));
+    const sizeSel = document.getElementById('userPageSize');
+    const pager = document.getElementById('userPager');
+    let page = 1;
+    function pageSize(){ const v=sizeSel.value; return v==='all'?(cards.length||1):parseInt(v); }
+    function render(){
+        const size=pageSize(), total=cards.length;
+        const pages=Math.max(1, Math.ceil(total/size));
+        if(page>pages) page=pages;
+        const start=(page-1)*size, end=page*size;
+        cards.forEach((c,i)=>{ c.style.display=(i>=start&&i<end)?'':'none'; });
+        pager.innerHTML='';
+        if(!total) return;
+        const info=document.createElement('span');
+        info.textContent=UI18N.page+' '+page+' / '+pages+' · '+UI18N.total+' '+total;
+        pager.appendChild(info);
+        const nav=document.createElement('div'); nav.className='flex items-center gap-2';
+        const mk=(txt,dis,fn)=>{ const b=document.createElement('button'); b.type='button'; b.textContent=txt;
+            b.className='px-2 py-1 rounded border border-slate-300 hover:bg-slate-100 disabled:opacity-40'; b.disabled=dis; b.onclick=fn; return b; };
+        nav.appendChild(mk(UI18N.prev, page<=1, ()=>{ if(page>1){page--; render();} }));
+        nav.appendChild(mk(UI18N.next, page>=pages, ()=>{ if(page<pages){page++; render();} }));
+        pager.appendChild(nav);
+    }
+    sizeSel.addEventListener('change', ()=>{ page=1; render(); });
+    render();
+
+    function relayout(card){
+        const body = card.querySelector('.uc-body');
+        if(body && body.style.maxHeight && body.style.maxHeight !== '0px'){
+            body.style.maxHeight = body.scrollHeight + 'px';
+        }
+    }
+
+    function loadInfo(card){
+        const uid=card.dataset.uid, box=card.querySelector('.uc-info');
+        box.innerHTML='<p class="text-slate-400">...</p>';
+        relayout(card);
+        fetch(DETAIL_URL.replace('/0/','/'+uid+'/'))
+            .then(r=>r.json()).then(d=>{
+                if(!d.ok){ box.innerHTML='<p class="text-rose-600">'+(d.error||UI18N.netErr)+'</p>'; relayout(card); return; }
+                const row=(k,v)=>'<div class="flex justify-between gap-3"><dt class="text-slate-400">'+k+'</dt><dd class="text-slate-700 font-medium text-right break-all">'+esc(v)+'</dd></div>';
+                const tt = d.unlimited?UI18N.unlimited:d.total_tokens;
+                const rem = d.unlimited?UI18N.unlimited:d.remaining;
+                box.innerHTML = row(UI18N.created,d.created_at)+row(UI18N.totalTokens,tt)+row(UI18N.used,d.total_used)
+                    +row(UI18N.remaining,rem)+row(UI18N.totalReq,d.total_requests)+row(UI18N.todayReq,d.today_requests)
+                    +row(UI18N.apiKeys,d.api_key_count+' / '+d.max_api_keys);
+                relayout(card);
+            }).catch(()=>{ box.innerHTML='<p class="text-rose-600">'+UI18N.netErr+'</p>'; relayout(card); });
+    }
+
+    cards.forEach(card=>{
+        const head=card.querySelector('.uc-head');
+        const body=card.querySelector('.uc-body');
+        const caret=card.querySelector('.uc-caret');
+        const info=card.querySelector('.uc-info');
+        let loaded=false;
+        head.addEventListener('click', ()=>{
+            const open=body.style.maxHeight && body.style.maxHeight!=='0px';
+            if(open){ body.style.maxHeight='0'; caret.style.transform=''; }
+            else {
+                if(!loaded){ loadInfo(card); loaded=true; }
+                body.style.maxHeight=body.scrollHeight+'px'; caret.style.transform='rotate(180deg)';
+            }
+        });
+        // tab 切换（信息会在展开时实时拉取，操作后刷新信息）
+        card.querySelectorAll('.uc-tab').forEach(t=>t.addEventListener('click', e=>{
+            e.stopPropagation();
+            const tab=t.dataset.tab;
+            card.querySelectorAll('.uc-tab').forEach(x=>{
+                const on=x.dataset.tab===tab;
+                x.classList.toggle('bg-brand-50',on); x.classList.toggle('text-brand-600',on);
+                x.classList.toggle('border-brand-100',on); x.classList.toggle('text-slate-500',!on);
+                x.classList.toggle('border-transparent',!on);
+            });
+            card.querySelectorAll('.uc-pane').forEach(p=>p.classList.toggle('hidden', p.dataset.pane!==tab));
+            if(tab==='info'){ loadInfo(card); }
+            // 切换后高度可能变化，重新计算
+            setTimeout(()=>relayout(card), 10);
+        }));
+    });
+})();
+</script>
 {% endblock %}
