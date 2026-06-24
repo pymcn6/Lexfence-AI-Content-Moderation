@@ -57,7 +57,7 @@
                 <tbody class="divide-y divide-slate-100" id="billRows">
                     {% for b in bills %}
                     <tr class="bill-row hover:bg-slate-50 transition-base">
-                        <td class="px-6 py-3 text-slate-500 whitespace-nowrap">{{ b.created_at.strftime('%m-%d %H:%M') }}</td>
+                        <td class="px-6 py-3 text-slate-500 whitespace-nowrap"><time class="js-localtime" data-fmt="short" datetime="{{ b.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}">{{ b.created_at.strftime('%m-%d %H:%M') }}</time></td>
                         <td class="px-6 py-3"><span class="px-1.5 py-0.5 rounded text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-100">{{ _(b.media_type or 'text') }}</span></td>
                         <td class="px-6 py-3">
                             {% if b.result == 'spam' %}
@@ -107,7 +107,8 @@ function showBill(id){
         .then(r=>r.json()).then(d=>{
             if(!d.ok){ body.innerHTML='<p class="text-rose-600 text-xs">'+(d.error||BI18N.netErr)+'</p>'; return; }
             const row=(k,v)=>'<div class="flex justify-between gap-4"><span class="text-slate-400">'+k+'</span><span class="text-slate-700 text-right break-all">'+esc(v)+'</span></div>';
-            body.innerHTML = row(BI18N.time, d.created_at)+row(BI18N.type, d.media_type)+row(BI18N.result, d.result)
+            const when = d.created_at_utc ? localizeTime(d.created_at_utc, 'long') : d.created_at;
+            body.innerHTML = row(BI18N.time, when)+row(BI18N.type, d.media_type)+row(BI18N.result, d.result)
                 + row(BI18N.category, d.category)+row(BI18N.tokens, d.tokens)+(d.model?row(BI18N.model, d.model):'')
                 + '<div class="pt-2 border-t border-slate-100"><p class="text-slate-400 mb-1">'+BI18N.content+'</p><p class="text-slate-700 break-all bg-slate-50 rounded p-2 text-xs">'+esc(d.detail||'-')+'</p></div>';
         }).catch(()=>{ body.innerHTML='<p class="text-rose-600 text-xs">'+BI18N.netErr+'</p>'; });

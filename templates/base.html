@@ -203,6 +203,28 @@
     </main>
 {% endif %}
 
+    <script>
+    // 全站时间本地化：服务端输出 UTC（ISO + Z），按访问者浏览器时区显示
+    (function(){
+        function fmt(iso, mode){
+            const d = new Date(iso);
+            if(isNaN(d)) return null;
+            if(mode === 'short'){
+                return d.toLocaleString([], {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+            }
+            return d.toLocaleString([], {year:'numeric', month:'2-digit', day:'2-digit',
+                hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        }
+        window.localizeTime = function(iso, mode){ return fmt(iso, mode) || iso; };
+        window.localizeTimes = function(root){
+            (root || document).querySelectorAll('time.js-localtime[datetime]').forEach(function(el){
+                const out = fmt(el.getAttribute('datetime'), el.dataset.fmt || 'long');
+                if(out){ el.textContent = out; el.title = fmt(el.getAttribute('datetime'), 'long') || out; }
+            });
+        };
+        document.addEventListener('DOMContentLoaded', function(){ window.localizeTimes(document); });
+    })();
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

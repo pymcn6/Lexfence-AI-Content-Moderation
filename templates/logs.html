@@ -22,7 +22,7 @@
             <tbody class="divide-y divide-slate-100">
                 {% for log in logs %}
                 <tr class="hover:bg-slate-50 transition-base">
-                    <td class="px-6 py-3 text-slate-500 whitespace-nowrap">{{ log.created_at.strftime('%m-%d %H:%M') }}</td>
+                    <td class="px-6 py-3 text-slate-500 whitespace-nowrap"><time class="js-localtime" data-fmt="short" datetime="{{ log.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}">{{ log.created_at.strftime('%m-%d %H:%M') }}</time></td>
                     {% if current_user.is_admin %}<td class="px-6 py-3 text-slate-500">{{ log.user_id or '-' }}</td>{% endif %}
                     <td class="px-6 py-3"><span class="px-1.5 py-0.5 rounded text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-100">{{ _(log.media_type or 'text') }}</span></td>
                     <td class="px-6 py-3 text-slate-700 max-w-xs truncate" title="{{ log.text_preview }}">{{ log.text_preview }}</td>

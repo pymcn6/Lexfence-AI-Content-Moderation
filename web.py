@@ -997,6 +997,7 @@ def bill_detail(log_id: int):
     return jsonify({
         "ok": True,
         "created_at": log.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        "created_at_utc": log.created_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "media_type": log.media_type or "text",
         "result": log.result,
         "category": log.category,
