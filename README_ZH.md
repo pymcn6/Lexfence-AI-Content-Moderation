@@ -12,8 +12,6 @@
 
 💛 **喜欢的话，[赞助本项目](sponsor.md)** — 你的支持是持续更新的动力。
 
-<img src="assets/img/wx_donate.png" alt="微信赞助" width="200">
-
 </div>
 
 ---
