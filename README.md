@@ -113,13 +113,6 @@ volumes:
 
 Tip: put a `.env` file next to `docker-compose.yml` with `SECRET_KEY=...` (and `MYSQL_ROOT_PASSWORD=...` if using MySQL) — Compose loads it automatically. After startup, open **http://localhost:5000** to run the install wizard.
 
-### Publishing a release (web, v2.4.0)
-1. Commit your changes locally and push the branch.
-2. Create the tag and push it: `git tag v2.4.0 && git push origin v2.4.0`.
-3. On GitHub, open **Releases → Draft a new release**, choose tag `v2.4.0`, write the notes, and **Publish**. The bundled GitHub Actions workflow then builds and pushes the Docker image to GHCR automatically.
-
-**Do NOT upload these** (already covered by `.gitignore`): `.env`, the whole `instance/` folder (SQLite DB, `secret_key`, install lock), any `*.db` / `*.sqlite3`, and `__pycache__/`. Only commit `.env.example` (placeholders only).
-
 ### Sponsor
 If this project helps you, consider [sponsoring](https://github.com/pymcn6/Lexfence-AI-Content-Moderation/blob/main/sponsor.md).
 
