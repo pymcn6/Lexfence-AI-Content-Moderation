@@ -10,6 +10,10 @@
 
 **[🚀 在线体验](https://textsafe.pym.plus/demomode)** — 免注册，即点即用。
 
+💛 **喜欢的话，[赞助本项目](sponsor.md)** — 你的支持是持续更新的动力。
+
+<img src="assets/img/wx_donate.png" alt="微信赞助" width="200">
+
 </div>
 
 ---
@@ -112,8 +116,15 @@ volumes:
 
 提示：在 `docker-compose.yml` 同目录放一个 `.env` 文件，写上 `SECRET_KEY=...`（用 MySQL 再加 `MYSQL_ROOT_PASSWORD=...`），Compose 会自动加载。启动后打开 **http://localhost:5000** 进入安装向导。
 
+### 发布版本（网页端，v2.4.0）
+1. 本地提交改动并推送分支。
+2. 打 tag 并推送：`git tag v2.4.0 && git push origin v2.4.0`。
+3. 在 GitHub 打开 **Releases → Draft a new release**，选择 tag `v2.4.0`，填写说明后 **Publish**。仓库内置的 GitHub Actions 工作流会自动构建并推送 Docker 镜像到 GHCR。
+
+**切勿上传以下文件**（`.gitignore` 已默认忽略）：`.env`、整个 `instance/` 目录（SQLite 数据库、`secret_key`、安装锁）、任何 `*.db` / `*.sqlite3` 文件，以及 `__pycache__/`。只提交 `.env.example`（仅占位符）。
+
 ### 赞助
-如果这个项目对你有帮助，欢迎[赞助支持](https://github.com/pymcn6/Lexfence-AI-Content-Moderation/blob/main/sponsor.md)。
+喜欢这个项目？看看[赞助页](sponsor.md) —— 感谢支持！
 
 ### 许可证
 MIT © pymcn
