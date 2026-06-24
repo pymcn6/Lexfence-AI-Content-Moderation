@@ -91,7 +91,7 @@
                 <p class="text-xs font-medium text-slate-500 mb-1.5">{{ _('Submit with callback') }} — {{ _('Text detection') }}</p>
                 <pre class="font-mono text-xs bg-slate-900 text-slate-100 p-4 rounded-md overflow-x-auto">curl -X POST "{{ base }}/api/v1/detect/submit" \
   -H "X-API-Key: YOUR_KEY" -H "Content-Type: application/json" \
-  -d '{"text":"some text","callback_url":"{{ base }}/hook"}'</pre>
+  -d '{"text":"some text","callback_url":"https://your_server/hook"}'</pre>
             </div>
             <div class="mPane mPane-webhook hidden" data-m="image">
                 <p class="text-xs font-medium text-slate-500 mb-1.5">{{ _('Submit with callback') }} — {{ _('Image detection') }}</p>
