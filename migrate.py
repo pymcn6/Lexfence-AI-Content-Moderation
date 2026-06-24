@@ -197,6 +197,14 @@ def _migrate_2_4_0(db, inspector, dialect, done):
     _add_column(db, inspector, "api_keys", "win_req_start", "win_req_start DATETIME NULL", done)
 
 
+def _migrate_2_4_1(db, inspector, dialect, done):
+    """v2.4.1：账单/日志时间按访问者浏览器时区本地化（纯前端），无表结构变更。
+
+    保留此步骤以维持版本注册表的连续性。
+    """
+    return
+
+
 # 注册表：按版本从旧到新顺序排列。
 MIGRATIONS = [
     ("1.1.0", _migrate_1_1_0),
@@ -205,6 +213,7 @@ MIGRATIONS = [
     ("2.2.0", _migrate_2_2_0),
     ("2.3.0", _migrate_2_3_0),
     ("2.4.0", _migrate_2_4_0),
+    ("2.4.1", _migrate_2_4_1),
 ]
 
 
